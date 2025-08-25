@@ -15,7 +15,10 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA, TYPE_ADVANTAGES, LEGENDARIES
+from pokemon_data import POKEMON_DATA, TYPE_ADVANTAGES
+
+# Extract legendaries dynamically
+LEGENDARIES = [name for name, data in POKEMON_DATA.items() if data.get('legendary', False)]
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -38,8 +41,8 @@ def calculate_power(pokemon_name, level):
     if pokemon_name in LEGENDARIES:
         power += 5
     
-    # Evolution stage (2-6 points)
-    stage = POKEMON_DATA.get(pokemon_name, {}).get('evolution_stage', 1)
+    # Evolution stage (2-6 points) - FIXED: using 'stage' instead of 'evolution_stage'
+    stage = POKEMON_DATA.get(pokemon_name, {}).get('stage', 1)
     power += stage * 2
     
     return power
@@ -293,7 +296,8 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(response.encode())
             return
         
-        # ONLINE PLAY - Regular stream logic
+        # ONLINE PLAY - Regular stream logic continues...
+        # [Rest of the online play code remains the same]
         stream_id = hashlib.md5(f"{channel}_{uptime}".encode()).hexdigest()
         
         try:
