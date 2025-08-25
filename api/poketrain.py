@@ -15,7 +15,7 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA, EVOLUTION_LEVELS
+from pokemon_data import POKEMON_DATA
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -93,13 +93,16 @@ class handler(BaseHTTPRequestHandler):
                         new_level = min(old_level + level_gain, 100)
                         levels[i] = new_level
                         
-                        # Check for evolution
+                        # Check for evolution - FIXED: using correct field names
                         pokemon_name = pokemon_list[i]
-                        evolution = POKEMON_DATA.get(pokemon_name, {}).get('evolves_to')
+                        poke_data = POKEMON_DATA.get(pokemon_name, {})
                         
-                        if evolution and evolution in EVOLUTION_LEVELS:
-                            evo_level = EVOLUTION_LEVELS[evolution]
-                            if old_level < evo_level <= new_level:
+                        # Check if this Pokemon can evolve
+                        if poke_data.get('can_evolve', False):
+                            evolution = poke_data.get('evolves_to')
+                            evo_level = poke_data.get('min_level_to_evolve')
+                            
+                            if evolution and evo_level and old_level < evo_level <= new_level:
                                 pokemon_list[i] = evolution
                                 evolutions.append(f"{pokemon_name} evolved into {evolution}!")
                         
@@ -184,13 +187,16 @@ class handler(BaseHTTPRequestHandler):
                 new_level = min(old_level + level_gain, 100)
                 levels[i] = new_level
                 
-                # Check for evolution
+                # Check for evolution - FIXED: using correct field names
                 pokemon_name = pokemon_list[i]
-                evolution = POKEMON_DATA.get(pokemon_name, {}).get('evolves_to')
+                poke_data = POKEMON_DATA.get(pokemon_name, {})
                 
-                if evolution and evolution in EVOLUTION_LEVELS:
-                    evo_level = EVOLUTION_LEVELS[evolution]
-                    if old_level < evo_level <= new_level:
+                # Check if this Pokemon can evolve
+                if poke_data.get('can_evolve', False):
+                    evolution = poke_data.get('evolves_to')
+                    evo_level = poke_data.get('min_level_to_evolve')
+                    
+                    if evolution and evo_level and old_level < evo_level <= new_level:
                         pokemon_list[i] = evolution
                         evolutions.append(f"{pokemon_name} evolved into {evolution}!")
                 
