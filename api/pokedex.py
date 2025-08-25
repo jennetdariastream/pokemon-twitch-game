@@ -25,14 +25,26 @@ def get_time_until_reset():
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
 
 def get_pokemon_info(pokemon_name):
-    """Get Pokemon info from Firestore"""
+    """Get Pokemon info from Firestore using normalized search"""
     try:
-        doc = db.collection('pokemon_data').document(pokemon_name).get()
+        # First try exact match with title case
+        doc = db.collection('pokemon_data').document(pokemon_name.strip().title()).get()
         if doc.exists:
-            return doc.to_dict()
+            return doc.id, doc.to_dict()  # Return both name and data
+        
+        # If not found, try normalized search
+        normalized = ''.join(c.lower() for c in pokemon_name if c.isalnum())
+        
+        # Query by normalized_name field
+        docs = db.collection('pokemon_data').where('normalized_name', '==', normalized).limit(1).get()
+        
+        if docs:
+            doc = docs[0]
+            return doc.id, doc.to_dict()  # Return document ID (proper name) and data
+            
     except:
         pass
-    return None
+    return None, None
 
 def get_random_pokemon():
     """Get a random Pokemon from Firestore"""
@@ -76,9 +88,8 @@ class handler(BaseHTTPRequestHandler):
                 # Moderator can use pokedex offline
                 try:
                     if pokemon_param:
-                        # Specific Pokemon lookup
-                        pokemon_name = pokemon_param.strip().title()
-                        info = get_pokemon_info(pokemon_name)
+                        # Specific Pokemon lookup with normalized search
+                        pokemon_name, info = get_pokemon_info(pokemon_param)
                         
                         if info:
                             ptype = info.get('type', 'Unknown')
@@ -94,7 +105,7 @@ class handler(BaseHTTPRequestHandler):
                             
                             response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
                         else:
-                            response = f"@{user}, {pokemon_name} not found in the Pokedex! | {get_time_until_reset()}"
+                            response = f"@{user}, {pokemon_param} not found in the Pokedex! | {get_time_until_reset()}"
                     else:
                         # Random Pokemon fact
                         pokemon_name, info = get_random_pokemon()
@@ -139,9 +150,8 @@ class handler(BaseHTTPRequestHandler):
             # ONLINE PLAY - Regular logic
             try:
                 if pokemon_param:
-                    # Specific Pokemon lookup
-                    pokemon_name = pokemon_param.strip().title()
-                    info = get_pokemon_info(pokemon_name)
+                    # Specific Pokemon lookup with normalized search
+                    pokemon_name, info = get_pokemon_info(pokemon_param)
                     
                     if info:
                         ptype = info.get('type', 'Unknown')
@@ -157,7 +167,7 @@ class handler(BaseHTTPRequestHandler):
                         
                         response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
                     else:
-                        response = f"@{user}, {pokemon_name} not found in the Pokedex!"
+                        response = f"@{user}, {pokemon_param} not found in the Pokedex!"
                 else:
                     # Random Pokemon fact
                     pokemon_name, info = get_random_pokemon()
