@@ -4,10 +4,11 @@ import json
 import urllib.parse
 import random
 import hashlib
-import firebase_admin
-from firebase_admin import credentials, firestore
 import os
 from datetime import datetime, timezone, timedelta
+
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(json.loads(os.environ.get('FIREBASE_CREDS')))
@@ -15,10 +16,34 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA
+# Cache for Pokemon data to reduce Firestore reads
+POKEMON_CACHE = {}
+LEGENDARIES_CACHE = []
+CACHE_LOADED = False
 
-# Extract legendaries dynamically from POKEMON_DATA
-LEGENDARIES = [name for name, data in POKEMON_DATA.items() if data.get('legendary', False)]
+def load_pokemon_data():
+    """Load Pokemon data from Firestore into cache"""
+    global POKEMON_CACHE, LEGENDARIES_CACHE, CACHE_LOADED
+    
+    if CACHE_LOADED:
+        return True
+    
+    try:
+        # Load legendary list
+        legends_doc = db.collection('game_config').document('legendaries').get()
+        if legends_doc.exists:
+            LEGENDARIES_CACHE = legends_doc.to_dict().get('list', [])
+        
+        # For catching, we don't need ALL Pokemon data, just names and levels
+        # This is more efficient than loading everything
+        pokemon_docs = db.collection('pokemon_data').stream()
+        for doc in pokemon_docs:
+            POKEMON_CACHE[doc.id] = doc.to_dict()
+        
+        CACHE_LOADED = True
+        return True
+    except Exception as e:
+        return False
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -43,6 +68,15 @@ class handler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(b"Unauthorized: This channel is not permitted to use this command.")
+            return
+        
+        # Load Pokemon data from Firestore
+        if not load_pokemon_data():
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b"Error: Could not load Pokemon data from database.")
             return
         
         user = params.get('user', ['someone'])[0].lower()
@@ -77,17 +111,20 @@ class handler(BaseHTTPRequestHandler):
                             caught = []
                             levels = []
                             
+                            # Get all Pokemon names
+                            all_pokemon = list(POKEMON_CACHE.keys())
+                            non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
+                            
                             for _ in range(5):
-                                if random.random() < 0.03:  # 3% legendary chance
-                                    pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                                if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
+                                    pokemon = random.choice(LEGENDARIES_CACHE)
                                     level = random.randint(40, 50)
                                 else:
                                     # Get non-legendary Pokemon
-                                    non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
-                                    pokemon = random.choice(non_legendaries)
-                                    poke_info = POKEMON_DATA[pokemon]
+                                    pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
+                                    poke_info = POKEMON_CACHE.get(pokemon, {})
                                     
-                                    # Use catch_level_min and catch_level_max from your data
+                                    # Use catch_level_min and catch_level_max from data
                                     min_level = poke_info.get('catch_level_min', 5)
                                     max_level = poke_info.get('catch_level_max', 45)
                                     level = random.randint(min_level, max_level)
@@ -110,17 +147,20 @@ class handler(BaseHTTPRequestHandler):
                         caught = []
                         levels = []
                         
+                        # Get all Pokemon names
+                        all_pokemon = list(POKEMON_CACHE.keys())
+                        non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
+                        
                         for _ in range(5):
-                            if random.random() < 0.03:  # 3% legendary chance
-                                pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                            if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
+                                pokemon = random.choice(LEGENDARIES_CACHE)
                                 level = random.randint(40, 50)
                             else:
                                 # Get non-legendary Pokemon
-                                non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
-                                pokemon = random.choice(non_legendaries)
-                                poke_info = POKEMON_DATA[pokemon]
+                                pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
+                                poke_info = POKEMON_CACHE.get(pokemon, {})
                                 
-                                # Use catch_level_min and catch_level_max from your data
+                                # Use catch_level_min and catch_level_max from data
                                 min_level = poke_info.get('catch_level_min', 5)
                                 max_level = poke_info.get('catch_level_max', 45)
                                 level = random.randint(min_level, max_level)
@@ -185,17 +225,20 @@ class handler(BaseHTTPRequestHandler):
                     caught = []
                     levels = []
                     
+                    # Get all Pokemon names
+                    all_pokemon = list(POKEMON_CACHE.keys())
+                    non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
+                    
                     for _ in range(5):
-                        if random.random() < 0.03:  # 3% legendary chance
-                            pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                        if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
+                            pokemon = random.choice(LEGENDARIES_CACHE)
                             level = random.randint(40, 50)
                         else:
                             # Get non-legendary Pokemon
-                            non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
-                            pokemon = random.choice(non_legendaries)
-                            poke_info = POKEMON_DATA[pokemon]
+                            pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
+                            poke_info = POKEMON_CACHE.get(pokemon, {})
                             
-                            # Use catch_level_min and catch_level_max from your data
+                            # Use catch_level_min and catch_level_max from data
                             min_level = poke_info.get('catch_level_min', 5)
                             max_level = poke_info.get('catch_level_max', 45)
                             level = random.randint(min_level, max_level)
@@ -218,17 +261,20 @@ class handler(BaseHTTPRequestHandler):
                 caught = []
                 levels = []
                 
+                # Get all Pokemon names
+                all_pokemon = list(POKEMON_CACHE.keys())
+                non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
+                
                 for _ in range(5):
-                    if random.random() < 0.03:  # 3% legendary chance
-                        pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                    if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
+                        pokemon = random.choice(LEGENDARIES_CACHE)
                         level = random.randint(40, 50)
                     else:
                         # Get non-legendary Pokemon
-                        non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
-                        pokemon = random.choice(non_legendaries)
-                        poke_info = POKEMON_DATA[pokemon]
+                        pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
+                        poke_info = POKEMON_CACHE.get(pokemon, {})
                         
-                        # Use catch_level_min and catch_level_max from your data
+                        # Use catch_level_min and catch_level_max from data
                         min_level = poke_info.get('catch_level_min', 5)
                         max_level = poke_info.get('catch_level_max', 45)
                         level = random.randint(min_level, max_level)
