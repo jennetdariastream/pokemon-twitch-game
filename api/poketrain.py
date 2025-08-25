@@ -95,7 +95,7 @@ class handler(BaseHTTPRequestHandler):
                 else:
                     # Mod offline training (daily)
                     utc_now = datetime.now(timezone.utc)
-                    daily_id = utc_now.strftime('%Y%m%d')
+                    daily_id = f"mod_daily_{utc_now.strftime('%Y%m%d')}"  # FIXED: Added mod_daily_ prefix
                     catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(user)
                     data = catch_ref.get().to_dict()
                     
@@ -117,7 +117,7 @@ class handler(BaseHTTPRequestHandler):
                             
                             # Build individual results for each Pokemon
                             training_results = []
-                            for pokemon, old_level in zip(pokemon_list, old_levels):
+                            for i, (pokemon, old_level) in enumerate(zip(pokemon_list, old_levels)):
                                 level_gain = get_weighted_level_gain()
                                 new_level = old_level + level_gain
                                 new_levels.append(new_level)
@@ -126,7 +126,7 @@ class handler(BaseHTTPRequestHandler):
                                 evolution = check_evolution(pokemon, old_level, new_level, level_gain)
                                 if evolution:
                                     training_results.append(f"{pokemon} gained +{level_gain} levels and evolved into {evolution}")
-                                    pokemon_list[pokemon_list.index(pokemon)] = evolution
+                                    pokemon_list[i] = evolution  # FIXED: Use index instead of .index()
                                 else:
                                     training_results.append(f"{pokemon} gained +{level_gain} levels")
                             
@@ -163,7 +163,7 @@ class handler(BaseHTTPRequestHandler):
                         
                         # Build individual results for each Pokemon
                         training_results = []
-                        for pokemon, old_level in zip(pokemon_list, old_levels):
+                        for i, (pokemon, old_level) in enumerate(zip(pokemon_list, old_levels)):
                             level_gain = get_weighted_level_gain()
                             new_level = old_level + level_gain
                             new_levels.append(new_level)
@@ -172,7 +172,7 @@ class handler(BaseHTTPRequestHandler):
                             evolution = check_evolution(pokemon, old_level, new_level, level_gain)
                             if evolution:
                                 training_results.append(f"{pokemon} gained +{level_gain} levels and evolved into {evolution}")
-                                pokemon_list[pokemon_list.index(pokemon)] = evolution
+                                pokemon_list[i] = evolution  # FIXED: Use index instead of .index()
                             else:
                                 training_results.append(f"{pokemon} gained +{level_gain} levels")
                         
