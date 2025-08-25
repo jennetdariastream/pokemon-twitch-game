@@ -14,8 +14,6 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA
-
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
     utc_now = datetime.now(timezone.utc)
@@ -25,6 +23,16 @@ def get_time_until_reset():
     minutes = int((time_until.total_seconds() % 3600) // 60)
     seconds = int(time_until.total_seconds() % 60)
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
+
+def get_pokemon_type(pokemon_name):
+    """Get Pokemon type from Firestore"""
+    try:
+        doc = db.collection('pokemon_data').document(pokemon_name).get()
+        if doc.exists:
+            return doc.to_dict().get('type', 'Unknown')
+        return 'Unknown'
+    except:
+        return 'Unknown'
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -86,10 +94,10 @@ class handler(BaseHTTPRequestHandler):
                     battles_left = 2 - battles_done
                     training_left = 2 - training_used
                     
-                    # Format Pokemon with types and levels
+                    # Format Pokemon with types and levels - get types from Firestore
                     pokemon_with_info = []
                     for p, l in zip(pokemon_list, levels):
-                        ptype = POKEMON_DATA.get(p, {}).get('type', 'Unknown')
+                        ptype = get_pokemon_type(p)
                         pokemon_with_info.append(f"{p} ({ptype}, Lv.{l})")
                     
                     response = f"@{user}'s team: {', '.join(pokemon_with_info)} | Record: {wins}W-{losses}L | Battles left: {battles_left} | Training left: {training_left} | {get_time_until_reset()}"
@@ -164,10 +172,10 @@ class handler(BaseHTTPRequestHandler):
             battles_left = 2 - battles_done
             training_left = 2 - training_used
             
-            # Format Pokemon with types and levels
+            # Format Pokemon with types and levels - get types from Firestore
             pokemon_with_info = []
             for p, l in zip(pokemon_list, levels):
-                ptype = POKEMON_DATA.get(p, {}).get('type', 'Unknown')
+                ptype = get_pokemon_type(p)
                 pokemon_with_info.append(f"{p} ({ptype}, Lv.{l})")
             
             response = f"@{user}'s team: {', '.join(pokemon_with_info)} | Record: {wins}W-{losses}L | Battles left: {battles_left} | Training left: {training_left}"
