@@ -115,8 +115,8 @@ class handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(f"Error retrieving Pokemon!".encode())
             else:
-                # Regular user offline - always show same message
-                response = f"@{user}, you cannot view Pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to view your Pokemon!"
+                # Regular user offline - cannot use command
+                response = f"@{user}, you cannot view Pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch, train, and battle your Pokemon!"
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
