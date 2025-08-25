@@ -49,26 +49,16 @@ class handler(BaseHTTPRequestHandler):
                             info = POKEMON_DATA[pokemon_name]
                             ptype = info.get('type', 'Unknown')
                             species = info.get('species', 'Unknown Pokemon')
-                            entry = info.get('pokedex_entry', 'No data available.')
+                            entry = info.get('entry', 'No data available.')  # FIXED: using 'entry' instead of 'pokedex_entry'
                             
                             # Truncate entry for chat
                             if len(entry) > 200:
                                 entry = entry[:197] + "..."
                             
-                            # Get evolution info
-                            evolves_from = info.get('evolves_from', '')
-                            evolves_to = info.get('evolves_to', '')
+                            # Get evolution info - FIXED: using 'evolution' field
+                            evolution_chain = info.get('evolution', 'No evolution')
                             
-                            if evolves_from and evolves_to:
-                                evo_chain = f"{evolves_from} → {pokemon_name} → {evolves_to}"
-                            elif evolves_from:
-                                evo_chain = f"{evolves_from} → {pokemon_name}"
-                            elif evolves_to:
-                                evo_chain = f"{pokemon_name} → {evolves_to}"
-                            else:
-                                evo_chain = "No evolution"
-                            
-                            response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evo_chain} | {entry} | {get_time_until_reset()}"
+                            response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
                         else:
                             response = f"@{user}, {pokemon_name} not found in the Pokedex! | {get_time_until_reset()}"
                     else:
@@ -76,7 +66,7 @@ class handler(BaseHTTPRequestHandler):
                         pokemon_name = random.choice(list(POKEMON_DATA.keys()))
                         info = POKEMON_DATA[pokemon_name]
                         ptype = info.get('type', 'Unknown')
-                        entry = info.get('pokedex_entry', 'No data available.')
+                        entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
                         
                         # Truncate for random facts
                         if len(entry) > 150:
@@ -120,26 +110,16 @@ class handler(BaseHTTPRequestHandler):
                     info = POKEMON_DATA[pokemon_name]
                     ptype = info.get('type', 'Unknown')
                     species = info.get('species', 'Unknown Pokemon')
-                    entry = info.get('pokedex_entry', 'No data available.')
+                    entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
                     
                     # Truncate entry for chat
                     if len(entry) > 200:
                         entry = entry[:197] + "..."
                     
-                    # Get evolution info
-                    evolves_from = info.get('evolves_from', '')
-                    evolves_to = info.get('evolves_to', '')
+                    # Get evolution info - FIXED: using 'evolution' field
+                    evolution_chain = info.get('evolution', 'No evolution')
                     
-                    if evolves_from and evolves_to:
-                        evo_chain = f"{evolves_from} → {pokemon_name} → {evolves_to}"
-                    elif evolves_from:
-                        evo_chain = f"{evolves_from} → {pokemon_name}"
-                    elif evolves_to:
-                        evo_chain = f"{pokemon_name} → {evolves_to}"
-                    else:
-                        evo_chain = "No evolution"
-                    
-                    response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evo_chain} | {entry}"
+                    response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
                 else:
                     response = f"@{user}, {pokemon_name} not found in the Pokedex!"
             else:
@@ -147,7 +127,7 @@ class handler(BaseHTTPRequestHandler):
                 pokemon_name = random.choice(list(POKEMON_DATA.keys()))
                 info = POKEMON_DATA[pokemon_name]
                 ptype = info.get('type', 'Unknown')
-                entry = info.get('pokedex_entry', 'No data available.')
+                entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
                 
                 # Truncate for random facts
                 if len(entry) > 150:
