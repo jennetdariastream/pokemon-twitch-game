@@ -41,9 +41,19 @@ def check_evolution(pokemon_name, old_level, new_level, level_gain):
             if (poke_data.get('can_evolve', False) and 
                 poke_data.get('can_train_evolve', False) and
                 poke_data.get('evolution_method') == 'level-up'):
-                evolution = poke_data.get('evolves_to')
+                
+                evolves_to = poke_data.get('evolves_to')
                 evo_level = poke_data.get('min_level_to_evolve')
-                if evolution and evo_level and old_level < evo_level <= new_level:
+                
+                if evolves_to and evo_level and old_level < evo_level <= new_level:
+                    # Check if this is a branched evolution (pipe-separated)
+                    if '|' in str(evolves_to):
+                        # Split and randomly choose from the branches
+                        evolution_options = evolves_to.split('|')
+                        evolution = random.choice(evolution_options)
+                    else:
+                        # Single evolution path
+                        evolution = evolves_to
                     return evolution
     except:
         pass
