@@ -88,39 +88,48 @@ class handler(BaseHTTPRequestHandler):
                 # Moderator can use pokedex offline
                 try:
                     if pokemon_param:
-                        # Specific Pokemon lookup with normalized search
-                        pokemon_name, info = get_pokemon_info(pokemon_param)
-                        
-                        if info:
-                            ptype = info.get('type', 'Unknown')
-                            species = info.get('species', 'Unknown Pokemon')
-                            entry = info.get('entry', 'No data available.')
+                        # Check if user wants random
+                        if pokemon_param.lower() == "random":
+                            # Random Pokemon fact
+                            pokemon_name, info = get_random_pokemon()
                             
-                            # Truncate entry for chat
-                            if len(entry) > 200:
-                                entry = entry[:197] + "..."
-                            
-                            # Get evolution info
-                            evolution_chain = info.get('evolution', 'No evolution')
-                            
-                            response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
+                            if info:
+                                ptype = info.get('type', 'Unknown')
+                                entry = info.get('entry', 'No data available.')
+                                
+                                # Ensure total message stays under 500 chars
+                                total_msg = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry} | {get_time_until_reset()}"
+                                if len(total_msg) > 490:
+                                    # Calculate how much to trim from entry
+                                    excess = len(total_msg) - 487
+                                    entry = entry[:len(entry) - excess] + "..."
+                                    total_msg = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry} | {get_time_until_reset()}"
+                                
+                                response = total_msg
+                            else:
+                                response = f"Pokedex database error! | {get_time_until_reset()}"
                         else:
-                            response = f"@{user}, {pokemon_param} not found in the Pokedex! | {get_time_until_reset()}"
+                            # Specific Pokemon lookup with normalized search
+                            pokemon_name, info = get_pokemon_info(pokemon_param)
+                            
+                            if info:
+                                ptype = info.get('type', 'Unknown')
+                                species = info.get('species', 'Unknown Pokemon')
+                                entry = info.get('entry', 'No data available.')
+                                evolution_chain = info.get('evolution', 'No evolution')
+                                
+                                # Build message and truncate if needed
+                                response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
+                                if len(response) > 490:
+                                    # Calculate how much we need to trim from entry
+                                    excess = len(response) - 487
+                                    entry = entry[:len(entry) - excess] + "..."
+                                    response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
+                            else:
+                                response = f"@{user}, {pokemon_param} not found in the Pokedex! | {get_time_until_reset()}"
                     else:
-                        # Random Pokemon fact
-                        pokemon_name, info = get_random_pokemon()
-                        
-                        if info:
-                            ptype = info.get('type', 'Unknown')
-                            entry = info.get('entry', 'No data available.')
-                            
-                            # Truncate for random facts
-                            if len(entry) > 150:
-                                entry = entry[:147] + "..."
-                            
-                            response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry} | {get_time_until_reset()}"
-                        else:
-                            response = f"Pokedex database error! | {get_time_until_reset()}"
+                        # No parameter provided (shouldn't happen with new command)
+                        response = f"@{user}, please specify a Pokemon name or 'random'! | {get_time_until_reset()}"
                     
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain; charset=utf-8')
@@ -150,39 +159,46 @@ class handler(BaseHTTPRequestHandler):
             # ONLINE PLAY - Regular logic
             try:
                 if pokemon_param:
-                    # Specific Pokemon lookup with normalized search
-                    pokemon_name, info = get_pokemon_info(pokemon_param)
-                    
-                    if info:
-                        ptype = info.get('type', 'Unknown')
-                        species = info.get('species', 'Unknown Pokemon')
-                        entry = info.get('entry', 'No data available.')
+                    # Check if user wants random
+                    if pokemon_param.lower() == "random":
+                        # Random Pokemon fact
+                        pokemon_name, info = get_random_pokemon()
                         
-                        # Truncate entry for chat
-                        if len(entry) > 200:
-                            entry = entry[:197] + "..."
-                        
-                        # Get evolution info
-                        evolution_chain = info.get('evolution', 'No evolution')
-                        
-                        response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
+                        if info:
+                            ptype = info.get('type', 'Unknown')
+                            entry = info.get('entry', 'No data available.')
+                            
+                            # Build message and truncate if needed
+                            response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry}"
+                            if len(response) > 490:
+                                # Calculate how much we need to trim
+                                excess = len(response) - 487
+                                entry = entry[:len(entry) - excess] + "..."
+                                response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry}"
+                        else:
+                            response = "Pokedex database error!"
                     else:
-                        response = f"@{user}, {pokemon_param} not found in the Pokedex!"
+                        # Specific Pokemon lookup with normalized search
+                        pokemon_name, info = get_pokemon_info(pokemon_param)
+                        
+                        if info:
+                            ptype = info.get('type', 'Unknown')
+                            species = info.get('species', 'Unknown Pokemon')
+                            entry = info.get('entry', 'No data available.')
+                            evolution_chain = info.get('evolution', 'No evolution')
+                            
+                            # Build message and truncate if needed
+                            response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
+                            if len(response) > 490:
+                                # Calculate how much we need to trim from entry
+                                excess = len(response) - 487
+                                entry = entry[:len(entry) - excess] + "..."
+                                response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
+                        else:
+                            response = f"@{user}, {pokemon_param} not found in the Pokedex!"
                 else:
-                    # Random Pokemon fact
-                    pokemon_name, info = get_random_pokemon()
-                    
-                    if info:
-                        ptype = info.get('type', 'Unknown')
-                        entry = info.get('entry', 'No data available.')
-                        
-                        # Truncate for random facts
-                        if len(entry) > 150:
-                            entry = entry[:147] + "..."
-                        
-                        response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry}"
-                    else:
-                        response = "Pokedex database error!"
+                    # No parameter provided (shouldn't happen with new command)
+                    response = f"@{user}, please specify a Pokemon name or 'random'!"
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain; charset=utf-8')
