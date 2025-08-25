@@ -16,7 +16,7 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# Cache for Pokemon data to reduce Firestore reads
+# Cache for Pokemon data
 POKEMON_CACHE = {}
 LEGENDARIES_CACHE = []
 CACHE_LOADED = False
@@ -41,7 +41,7 @@ def load_pokemon_data():
         
         CACHE_LOADED = True
         return True
-    except Exception as e:
+    except:
         return False
 
 def get_time_until_reset():
@@ -53,6 +53,30 @@ def get_time_until_reset():
     minutes = int((time_until.total_seconds() % 3600) // 60)
     seconds = int(time_until.total_seconds() % 60)
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
+
+def catch_pokemon():
+    """Generate 5 random Pokemon with levels"""
+    caught = []
+    levels = []
+    
+    all_pokemon = list(POKEMON_CACHE.keys())
+    non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
+    
+    for _ in range(5):
+        if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
+            pokemon = random.choice(LEGENDARIES_CACHE)
+            level = random.randint(40, 50)
+        else:
+            pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
+            poke_info = POKEMON_CACHE.get(pokemon, {})
+            min_level = poke_info.get('catch_level_min', 5)
+            max_level = poke_info.get('catch_level_max', 45)
+            level = random.randint(min_level, max_level)
+        
+        caught.append(pokemon)
+        levels.append(level)
+    
+    return caught, levels
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -91,48 +115,17 @@ class handler(BaseHTTPRequestHandler):
                 daily_id = f"mod_daily_{utc_now.strftime('%Y%m%d')}"
                 
                 try:
-                    # Check if mod already caught today
                     catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(user)
                     catch_doc = catch_ref.get()
                     
                     if catch_doc.exists:
                         data = catch_doc.to_dict()
-                        pokemon_list = data.get('pokemon', [])
-                        levels = data.get('levels', [])
                         catch_count = data.get('catch_count', 1)
                         
-                        # Check for re-roll
-                        if catch_count >= 2:
-                            # Already used re-roll
-                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
-                            response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Daily re-roll used) | {get_time_until_reset()}"
-                        else:
-                            # Re-roll - generate NEW Pokemon
-                            caught = []
-                            levels = []
+                        if catch_count == 1:
+                            # First catch done, do re-roll
+                            caught, levels = catch_pokemon()
                             
-                            # Get all Pokemon names
-                            all_pokemon = list(POKEMON_CACHE.keys())
-                            non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
-                            
-                            for _ in range(5):
-                                if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
-                                    pokemon = random.choice(LEGENDARIES_CACHE)
-                                    level = random.randint(40, 50)
-                                else:
-                                    # Get non-legendary Pokemon
-                                    pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
-                                    poke_info = POKEMON_CACHE.get(pokemon, {})
-                                    
-                                    # Use catch_level_min and catch_level_max from data
-                                    min_level = poke_info.get('catch_level_min', 5)
-                                    max_level = poke_info.get('catch_level_max', 45)
-                                    level = random.randint(min_level, max_level)
-                                
-                                caught.append(pokemon)
-                                levels.append(level)
-                            
-                            # Update with re-roll
                             catch_ref.update({
                                 'pokemon': caught,
                                 'levels': levels,
@@ -141,34 +134,17 @@ class handler(BaseHTTPRequestHandler):
                             })
                             
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                            response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (Daily re-roll used) | {get_time_until_reset()}"
+                            response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! (2/2 catches used - no more re-rolls today) | {get_time_until_reset()}"
+                        else:
+                            # Already used both catches
+                            pokemon_list = data.get('pokemon', [])
+                            levels = data.get('levels', [])
+                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
+                            response = f"@{user}, you've already used both catches today! Your team: {', '.join(pokemon_with_levels)} | {get_time_until_reset()}"
                     else:
-                        # First catch of the day for mod
-                        caught = []
-                        levels = []
+                        # First catch of the day
+                        caught, levels = catch_pokemon()
                         
-                        # Get all Pokemon names
-                        all_pokemon = list(POKEMON_CACHE.keys())
-                        non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
-                        
-                        for _ in range(5):
-                            if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
-                                pokemon = random.choice(LEGENDARIES_CACHE)
-                                level = random.randint(40, 50)
-                            else:
-                                # Get non-legendary Pokemon
-                                pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
-                                poke_info = POKEMON_CACHE.get(pokemon, {})
-                                
-                                # Use catch_level_min and catch_level_max from data
-                                min_level = poke_info.get('catch_level_min', 5)
-                                max_level = poke_info.get('catch_level_max', 45)
-                                level = random.randint(min_level, max_level)
-                            
-                            caught.append(pokemon)
-                            levels.append(level)
-                        
-                        # Save to mod_daily database
                         catch_ref.set({
                             'pokemon': caught,
                             'levels': levels,
@@ -178,7 +154,7 @@ class handler(BaseHTTPRequestHandler):
                         })
                         
                         pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                        response = f"@{user} caught: {', '.join(pokemon_with_levels)}! | {get_time_until_reset()}"
+                        response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (1/2 catches - you can re-roll once if unhappy with your team) | {get_time_until_reset()}"
                     
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain')
@@ -193,7 +169,7 @@ class handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(f"Error catching Pokemon!".encode())
             else:
-                # Regular user offline message - EXACT format from requirements
+                # Regular user offline message
                 response = f"@{user}, you cannot catch pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch and battle pokemon!"
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
@@ -206,48 +182,17 @@ class handler(BaseHTTPRequestHandler):
         stream_id = hashlib.md5(f"{channel}_{uptime}".encode()).hexdigest()
         
         try:
-            # Check if user already caught this stream
             catch_ref = db.collection('catches').document(stream_id).collection('users').document(user)
             catch_doc = catch_ref.get()
             
             if catch_doc.exists:
                 data = catch_doc.to_dict()
-                pokemon_list = data.get('pokemon', [])
-                levels = data.get('levels', [])
                 catch_count = data.get('catch_count', 1)
                 
-                # Check for re-roll
-                if catch_count >= 2:
-                    # Already used re-roll - EXACT format from requirements
-                    pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
-                    response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
-                else:
-                    # Re-roll - generate NEW Pokemon
-                    caught = []
-                    levels = []
+                if catch_count == 1:
+                    # First catch done, do re-roll
+                    caught, levels = catch_pokemon()
                     
-                    # Get all Pokemon names
-                    all_pokemon = list(POKEMON_CACHE.keys())
-                    non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
-                    
-                    for _ in range(5):
-                        if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
-                            pokemon = random.choice(LEGENDARIES_CACHE)
-                            level = random.randint(40, 50)
-                        else:
-                            # Get non-legendary Pokemon
-                            pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
-                            poke_info = POKEMON_CACHE.get(pokemon, {})
-                            
-                            # Use catch_level_min and catch_level_max from data
-                            min_level = poke_info.get('catch_level_min', 5)
-                            max_level = poke_info.get('catch_level_max', 45)
-                            level = random.randint(min_level, max_level)
-                        
-                        caught.append(pokemon)
-                        levels.append(level)
-                    
-                    # Update with re-roll
                     catch_ref.update({
                         'pokemon': caught,
                         'levels': levels,
@@ -256,34 +201,17 @@ class handler(BaseHTTPRequestHandler):
                     })
                     
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                    response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
+                    response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! (2/2 catches used - no more re-rolls this stream)"
+                else:
+                    # Already used both catches
+                    pokemon_list = data.get('pokemon', [])
+                    levels = data.get('levels', [])
+                    pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
+                    response = f"@{user}, you've already used both catches this stream! Your final team: {', '.join(pokemon_with_levels)}"
             else:
                 # First catch this stream
-                caught = []
-                levels = []
+                caught, levels = catch_pokemon()
                 
-                # Get all Pokemon names
-                all_pokemon = list(POKEMON_CACHE.keys())
-                non_legendaries = [p for p in all_pokemon if p not in LEGENDARIES_CACHE]
-                
-                for _ in range(5):
-                    if LEGENDARIES_CACHE and random.random() < 0.03:  # 3% legendary chance
-                        pokemon = random.choice(LEGENDARIES_CACHE)
-                        level = random.randint(40, 50)
-                    else:
-                        # Get non-legendary Pokemon
-                        pokemon = random.choice(non_legendaries if non_legendaries else all_pokemon)
-                        poke_info = POKEMON_CACHE.get(pokemon, {})
-                        
-                        # Use catch_level_min and catch_level_max from data
-                        min_level = poke_info.get('catch_level_min', 5)
-                        max_level = poke_info.get('catch_level_max', 45)
-                        level = random.randint(min_level, max_level)
-                    
-                    caught.append(pokemon)
-                    levels.append(level)
-                
-                # Save to database
                 catch_ref.set({
                     'pokemon': caught,
                     'levels': levels,
@@ -292,9 +220,8 @@ class handler(BaseHTTPRequestHandler):
                     'caught_at': firestore.SERVER_TIMESTAMP
                 })
                 
-                # First catch message - EXACT format from requirements
                 pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                response = f"@{user} caught: {', '.join(pokemon_with_levels)}! Use !pokebattle to battle trainers or !poketrain to level up!"
+                response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (1/2 catches - you can use !pokecatch once more to re-roll if unhappy)"
             
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
