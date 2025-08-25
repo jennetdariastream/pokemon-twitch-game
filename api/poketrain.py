@@ -20,18 +20,27 @@ def get_time_until_reset():
     utc_now = datetime.now(timezone.utc)
     tomorrow = utc_now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     time_until = tomorrow - utc_now
+    
     hours = int(time_until.total_seconds() // 3600)
     minutes = int((time_until.total_seconds() % 3600) // 60)
     seconds = int(time_until.total_seconds() % 60)
+    
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
 
-def check_evolution(pokemon_name, old_level, new_level):
+def check_evolution(pokemon_name, old_level, new_level, level_gain):
     """Check if Pokemon can evolve and return evolution if applicable"""
+    # Evolution only happens with 9-10 level gains
+    if level_gain < 9:
+        return None
+        
     try:
         doc = db.collection('pokemon_data').document(pokemon_name).get()
         if doc.exists:
             poke_data = doc.to_dict()
-            if poke_data.get('can_evolve', False):
+            # Check all evolution requirements
+            if (poke_data.get('can_evolve', False) and 
+                poke_data.get('can_train_evolve', False) and
+                poke_data.get('evolution_method') == 'level-up'):
                 evolution = poke_data.get('evolves_to')
                 evo_level = poke_data.get('min_level_to_evolve')
                 if evolution and evo_level and old_level < evo_level <= new_level:
@@ -40,12 +49,18 @@ def check_evolution(pokemon_name, old_level, new_level):
         pass
     return None
 
+def get_weighted_level_gain():
+    """Get level gain with weighted probabilities"""
+    levels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    weights = [1, 5, 8, 11, 14, 16, 14, 11, 8, 6, 6]  # Total: 100
+    return random.choices(levels, weights=weights, k=1)[0]
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         query = urllib.parse.urlparse(self.path).query
         params = urllib.parse.parse_qs(query)
-        
-        # SECURITY: Check channel authorization
+
+        # SECURITY: Check channel authorization first
         channel = params.get('channel', [''])[0].lower()
         if channel != 'jennetdaria':
             self.send_response(403)
@@ -54,165 +69,112 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"Unauthorized: This channel is not permitted to use this command.")
             return
+
+        user = params.get('user', [''])[0].lower()
+        uptime = params.get('uptime', [''])[0]
+        user_level = params.get('user_level', ['regular'])[0].lower()
         
-        user = params.get('user', ['someone'])[0].lower()
-        uptime = params.get('uptime', [None])[0]
-        user_level = params.get('user_level', [''])[0].lower()
-        
-        # Check if stream is online
-        if not uptime or uptime == 'offline':
-            # Check if user is a moderator
-            if user_level in ['owner', 'moderator']:
-                # Moderator offline play - daily training
-                utc_now = datetime.now(timezone.utc)
-                daily_id = f"mod_daily_{utc_now.strftime('%Y%m%d')}"
-                
-                try:
-                    # Get user's Pokemon from mod_daily
-                    catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(user)
-                    catch_doc = catch_ref.get()
-                    
-                    if not catch_doc.exists:
-                        response = f"@{user}, you need to !pokecatch before training! | {get_time_until_reset()}"
-                        self.send_response(200)
-                        self.send_header('Content-type', 'text/plain')
-                        self.send_header('Access-Control-Allow-Origin', '*')
-                        self.end_headers()
-                        self.wfile.write(response.encode())
-                        return
-                    
-                    data = catch_doc.to_dict()
-                    pokemon_list = data.get('pokemon', [])
-                    levels = data.get('levels', [])
-                    training_used = data.get('training_used', 0)
-                    
-                    # Check daily training limit
-                    if training_used >= 2:
-                        response = f"@{user}, you've already trained twice today! Your team: {', '.join([f'{p} (Lv.{l})' for p, l in zip(pokemon_list, levels)])} | {get_time_until_reset()}"
-                        self.send_response(200)
-                        self.send_header('Content-type', 'text/plain')
-                        self.send_header('Access-Control-Allow-Origin', '*')
-                        self.end_headers()
-                        self.wfile.write(response.encode())
-                        return
-                    
-                    # Train all Pokemon
-                    evolutions = []
-                    level_gains_display = []
-                    
-                    for i in range(len(pokemon_list)):
-                        old_level = levels[i]
-                        level_gain = random.randint(3, 8)
-                        new_level = min(old_level + level_gain, 100)
-                        levels[i] = new_level
-                        level_gains_display.append(f"+{level_gain}")
-                        
-                        # Check for evolution using Firestore
-                        pokemon_name = pokemon_list[i]
-                        evolution = check_evolution(pokemon_name, old_level, new_level)
-                        if evolution:
-                            pokemon_list[i] = evolution
-                            evolutions.append(f"{pokemon_name} evolved into {evolution}!")
-                    
-                    # Update database (mod_daily)
-                    data['pokemon'] = pokemon_list
-                    data['levels'] = levels
-                    data['training_used'] = training_used + 1
-                    catch_ref.set(data)
-                    
-                    # Format response with countdown
-                    trainings_left = 2 - (training_used + 1)
-                    
-                    if evolutions:
-                        response = f"@{user} trained! {' '.join(evolutions)} ({trainings_left} training sessions left) | {get_time_until_reset()}"
-                    else:
-                        response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains_display)}! ({trainings_left} training sessions left) | {get_time_until_reset()}"
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(response.encode())
-                    
-                except Exception as e:
-                    self.send_response(500)
-                    self.send_header('Content-type', 'text/plain')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(f"Error training Pokemon!".encode())
-            else:
-                # Regular user offline message
-                response = f"@{user}, you cannot train pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch, train, and battle pokemon!"
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(response.encode())
-            return
-        
-        # ONLINE PLAY - Regular stream logic
-        stream_id = hashlib.md5(f"{channel}_{uptime}".encode()).hexdigest()
+        is_offline = uptime.lower() == 'offline'
+        is_mod = user_level in ['moderator', 'owner']
         
         try:
-            # Get user's Pokemon
-            catch_ref = db.collection('catches').document(stream_id).collection('users').document(user)
-            catch_doc = catch_ref.get()
-            
-            if not catch_doc.exists:
-                response = f"@{user}, you need to !pokecatch before training!"
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(response.encode())
-                return
-            
-            data = catch_doc.to_dict()
-            pokemon_list = data.get('pokemon', [])
-            levels = data.get('levels', [])
-            training_used = data.get('training_used', 0)
-            
-            # Check training limit (2 per stream)
-            if training_used >= 2:
-                response = f"@{user}, you've already trained twice this stream! Your team: {', '.join([f'{p} (Lv.{l})' for p, l in zip(pokemon_list, levels)])}"
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(response.encode())
-                return
-            
-            # Train all Pokemon
-            evolutions = []
-            level_gains_display = []
-            
-            for i in range(len(pokemon_list)):
-                old_level = levels[i]
-                level_gain = random.randint(3, 8)
-                new_level = min(old_level + level_gain, 100)
-                levels[i] = new_level
-                level_gains_display.append(f"+{level_gain}")
-                
-                # Check for evolution using Firestore
-                pokemon_name = pokemon_list[i]
-                evolution = check_evolution(pokemon_name, old_level, new_level)
-                if evolution:
-                    pokemon_list[i] = evolution
-                    evolutions.append(f"{pokemon_name} evolved into {evolution}!")
-            
-            # Update database
-            data['pokemon'] = pokemon_list
-            data['levels'] = levels
-            data['training_used'] = training_used + 1
-            catch_ref.set(data)
-            
-            # Format response
-            trainings_left = 2 - (training_used + 1)
-            
-            if evolutions:
-                response = f"@{user} trained! {' '.join(evolutions)} ({trainings_left} training sessions left)"
+            if is_offline:
+                if not is_mod:
+                    # Regular users cannot train offline
+                    response = f"@{user}, you cannot train pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch, train, and battle pokemon!"
+                else:
+                    # Mod offline training (daily)
+                    utc_now = datetime.now(timezone.utc)
+                    daily_id = utc_now.strftime('%Y%m%d')
+                    catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(user)
+                    data = catch_ref.get().to_dict()
+                    
+                    if not data or 'pokemon' not in data:
+                        response = f"@{user}, you need to !pokecatch before training!"
+                    else:
+                        training_used = data.get('training_used', 0)
+                        
+                        if training_used >= 2:
+                            pokemon_list = data.get('pokemon', [])
+                            levels = data.get('levels', [])
+                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
+                            response = f"@{user}, you've already trained twice today! Your team: {', '.join(pokemon_with_levels)} | {get_time_until_reset()}"
+                        else:
+                            # Train the Pokemon
+                            pokemon_list = data.get('pokemon', [])
+                            old_levels = data.get('levels', [])
+                            new_levels = []
+                            
+                            # Build individual results for each Pokemon
+                            training_results = []
+                            for pokemon, old_level in zip(pokemon_list, old_levels):
+                                level_gain = get_weighted_level_gain()
+                                new_level = old_level + level_gain
+                                new_levels.append(new_level)
+                                
+                                # Check for evolution
+                                evolution = check_evolution(pokemon, old_level, new_level, level_gain)
+                                if evolution:
+                                    training_results.append(f"{pokemon} gained +{level_gain} levels and evolved into {evolution}")
+                                    pokemon_list[pokemon_list.index(pokemon)] = evolution
+                                else:
+                                    training_results.append(f"{pokemon} gained +{level_gain} levels")
+                            
+                            # Update database
+                            catch_ref.update({
+                                'pokemon': pokemon_list,
+                                'levels': new_levels,
+                                'training_used': training_used + 1
+                            })
+                            
+                            trainings_left = 2 - (training_used + 1)
+                            response = f"@{user} trained! {'! '.join(training_results)}! ({trainings_left} training sessions left) | {get_time_until_reset()}"
             else:
-                response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains_display)}! ({trainings_left} training sessions left)"
+                # Online training
+                stream_id = hashlib.md5(f"{channel}_{uptime}".encode()).hexdigest()
+                catch_ref = db.collection('catches').document(stream_id).collection('users').document(user)
+                data = catch_ref.get().to_dict()
+                
+                if not data or 'pokemon' not in data:
+                    response = f"@{user}, you need to !pokecatch before training!"
+                else:
+                    training_used = data.get('training_used', 0)
+                    
+                    if training_used >= 2:
+                        pokemon_list = data.get('pokemon', [])
+                        levels = data.get('levels', [])
+                        pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
+                        response = f"@{user}, you've already trained twice this stream! Your team: {', '.join(pokemon_with_levels)}"
+                    else:
+                        # Train the Pokemon
+                        pokemon_list = data.get('pokemon', [])
+                        old_levels = data.get('levels', [])
+                        new_levels = []
+                        
+                        # Build individual results for each Pokemon
+                        training_results = []
+                        for pokemon, old_level in zip(pokemon_list, old_levels):
+                            level_gain = get_weighted_level_gain()
+                            new_level = old_level + level_gain
+                            new_levels.append(new_level)
+                            
+                            # Check for evolution
+                            evolution = check_evolution(pokemon, old_level, new_level, level_gain)
+                            if evolution:
+                                training_results.append(f"{pokemon} gained +{level_gain} levels and evolved into {evolution}")
+                                pokemon_list[pokemon_list.index(pokemon)] = evolution
+                            else:
+                                training_results.append(f"{pokemon} gained +{level_gain} levels")
+                        
+                        # Update database
+                        catch_ref.update({
+                            'pokemon': pokemon_list,
+                            'levels': new_levels,
+                            'training_used': training_used + 1
+                        })
+                        
+                        trainings_left = 2 - (training_used + 1)
+                        response = f"@{user} trained! {'! '.join(training_results)}! ({trainings_left} training sessions left)"
             
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
