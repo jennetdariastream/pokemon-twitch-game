@@ -25,11 +25,51 @@ def get_time_until_reset():
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
 
 def get_pokemon_info(pokemon_name):
-    """Get Pokemon info from Firestore"""
+    """Get Pokemon info from Firestore with flexible name matching"""
     try:
-        doc = db.collection('pokemon_data').document(pokemon_name).get()
-        if doc.exists:
-            return doc.to_dict()
+        # Clean input
+        search_name = pokemon_name.strip()
+        
+        # Try these variations in order
+        variations = [
+            search_name.title(),                          # Basic title case
+            search_name.title().replace(' ', ''),         # Remove spaces
+            search_name.title().replace(' ', '-'),        # Replace spaces with dash
+            search_name.title().replace('-', ''),         # Remove dashes
+            search_name.title().replace("'", ''),         # Remove apostrophes
+            search_name.title() + 'd',                    # Add 'd' for Farfetch'd types
+            search_name.title().replace(' ', ': '),       # Add colon for Type: Null
+            search_name.title().replace(' ', '-') + 'o',  # Add -o for Jangmo-o types
+            search_name.title().replace('.', ''),         # Remove periods
+            search_name.title().replace(' ', ' ') + '.',  # Add period for Jr.
+        ]
+        
+        # Also add special replacements
+        if 'mr' in search_name.lower():
+            variations.append('Mr Mime')
+            variations.append('Mr Rime')
+            variations.append('Mr. Mime')
+            variations.append('Mime Jr.')
+        
+        if 'porygon' in search_name.lower():
+            if 'z' in search_name.lower() or '3' in search_name:
+                variations.append('Porygon-Z')
+            elif '2' in search_name.lower() or 'two' in search_name.lower():
+                variations.append('Porygon2')
+        
+        if 'nidoran' in search_name.lower():
+            if 'f' in search_name.lower() or 'female' in search_name.lower():
+                variations.append('Nidoran♀')
+            elif 'm' in search_name.lower() or 'male' in search_name.lower():
+                variations.append('Nidoran♂')
+        
+        # Try each variation
+        for variant in variations:
+            if variant:  # Skip empty strings
+                doc = db.collection('pokemon_data').document(variant).get()
+                if doc.exists:
+                    return doc.to_dict()
+        
     except:
         pass
     return None
@@ -76,11 +116,12 @@ class handler(BaseHTTPRequestHandler):
                 # Moderator can use pokedex offline
                 try:
                     if pokemon_param:
-                        # Specific Pokemon lookup
-                        pokemon_name = pokemon_param.strip().title()
-                        info = get_pokemon_info(pokemon_name)
+                        # Specific Pokemon lookup with flexible matching
+                        info = get_pokemon_info(pokemon_param)
                         
                         if info:
+                            # Extract Pokemon name from successful search
+                            pokemon_name = pokemon_param.strip().title()
                             ptype = info.get('type', 'Unknown')
                             species = info.get('species', 'Unknown Pokemon')
                             entry = info.get('entry', 'No data available.')
@@ -112,17 +153,17 @@ class handler(BaseHTTPRequestHandler):
                             response = f"Pokedex database error! | {get_time_until_reset()}"
                     
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     
                 except Exception as e:
                     self.send_response(500)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(f"Pokedex error!".encode())
+                    self.wfile.write(f"Pokedex error!".encode('utf-8'))
             else:
                 # Regular user offline message
                 if pokemon_param:
@@ -131,19 +172,20 @@ class handler(BaseHTTPRequestHandler):
                     response = f"@{user}, pokedex is currently offline. Please make sure to follow Jennet and come back when Jennet is live to learn about pokemon!"
                 
                 self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(response.encode())
+                self.wfile.write(response.encode('utf-8'))
         else:
             # ONLINE PLAY - Regular logic
             try:
                 if pokemon_param:
-                    # Specific Pokemon lookup
-                    pokemon_name = pokemon_param.strip().title()
-                    info = get_pokemon_info(pokemon_name)
+                    # Specific Pokemon lookup with flexible matching
+                    info = get_pokemon_info(pokemon_param)
                     
                     if info:
+                        # Extract Pokemon name from successful search
+                        pokemon_name = pokemon_param.strip().title()
                         ptype = info.get('type', 'Unknown')
                         species = info.get('species', 'Unknown Pokemon')
                         entry = info.get('entry', 'No data available.')
@@ -182,7 +224,7 @@ class handler(BaseHTTPRequestHandler):
                 
             except Exception as e:
                 self.send_response(500)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(f"Pokedex error!".encode())
+                self.wfile.write(f"Pokedex error!".encode('utf-8'))
