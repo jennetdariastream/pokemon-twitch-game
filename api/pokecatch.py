@@ -34,8 +34,7 @@ def load_pokemon_data():
         if legends_doc.exists:
             LEGENDARIES_CACHE = legends_doc.to_dict().get('list', [])
         
-        # For catching, we don't need ALL Pokemon data, just names and levels
-        # This is more efficient than loading everything
+        # Load all Pokemon data
         pokemon_docs = db.collection('pokemon_data').stream()
         for doc in pokemon_docs:
             POKEMON_CACHE[doc.id] = doc.to_dict()
@@ -104,10 +103,11 @@ class handler(BaseHTTPRequestHandler):
                         
                         # Check for re-roll
                         if catch_count >= 2:
+                            # Already used re-roll
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                             response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Daily re-roll used) | {get_time_until_reset()}"
                         else:
-                            # Re-roll logic
+                            # Re-roll - generate NEW Pokemon
                             caught = []
                             levels = []
                             
@@ -141,7 +141,7 @@ class handler(BaseHTTPRequestHandler):
                             })
                             
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                            response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! | {get_time_until_reset()}"
+                            response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (Daily re-roll used) | {get_time_until_reset()}"
                     else:
                         # First catch of the day for mod
                         caught = []
@@ -193,7 +193,7 @@ class handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(f"Error catching Pokemon!".encode())
             else:
-                # Regular user offline message
+                # Regular user offline message - EXACT format from requirements
                 response = f"@{user}, you cannot catch pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch and battle pokemon!"
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
@@ -218,10 +218,11 @@ class handler(BaseHTTPRequestHandler):
                 
                 # Check for re-roll
                 if catch_count >= 2:
+                    # Already used re-roll - EXACT format from requirements
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                     response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
                 else:
-                    # Re-roll logic
+                    # Re-roll - generate NEW Pokemon
                     caught = []
                     levels = []
                     
@@ -255,7 +256,7 @@ class handler(BaseHTTPRequestHandler):
                     })
                     
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                    response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! Use !pokebattle to battle trainers or !poketrain to level up!"
+                    response = f"@{user} caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
             else:
                 # First catch this stream
                 caught = []
@@ -291,6 +292,7 @@ class handler(BaseHTTPRequestHandler):
                     'caught_at': firestore.SERVER_TIMESTAMP
                 })
                 
+                # First catch message - EXACT format from requirements
                 pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
                 response = f"@{user} caught: {', '.join(pokemon_with_levels)}! Use !pokebattle to battle trainers or !poketrain to level up!"
             
