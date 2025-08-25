@@ -15,8 +15,6 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA
-
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
     utc_now = datetime.now(timezone.utc)
@@ -26,6 +24,21 @@ def get_time_until_reset():
     minutes = int((time_until.total_seconds() % 3600) // 60)
     seconds = int(time_until.total_seconds() % 60)
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
+
+def check_evolution(pokemon_name, old_level, new_level):
+    """Check if Pokemon can evolve and return evolution if applicable"""
+    try:
+        doc = db.collection('pokemon_data').document(pokemon_name).get()
+        if doc.exists:
+            poke_data = doc.to_dict()
+            if poke_data.get('can_evolve', False):
+                evolution = poke_data.get('evolves_to')
+                evo_level = poke_data.get('min_level_to_evolve')
+                if evolution and evo_level and old_level < evo_level <= new_level:
+                    return evolution
+    except:
+        pass
+    return None
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -84,31 +97,24 @@ class handler(BaseHTTPRequestHandler):
                         return
                     
                     # Train all Pokemon
-                    trained_info = []
                     evolutions = []
+                    level_gains_display = []
                     
                     for i in range(len(pokemon_list)):
                         old_level = levels[i]
                         level_gain = random.randint(3, 8)
                         new_level = min(old_level + level_gain, 100)
                         levels[i] = new_level
+                        level_gains_display.append(f"+{level_gain}")
                         
-                        # Check for evolution - FIXED: using correct field names
+                        # Check for evolution using Firestore
                         pokemon_name = pokemon_list[i]
-                        poke_data = POKEMON_DATA.get(pokemon_name, {})
-                        
-                        # Check if this Pokemon can evolve
-                        if poke_data.get('can_evolve', False):
-                            evolution = poke_data.get('evolves_to')
-                            evo_level = poke_data.get('min_level_to_evolve')
-                            
-                            if evolution and evo_level and old_level < evo_level <= new_level:
-                                pokemon_list[i] = evolution
-                                evolutions.append(f"{pokemon_name} evolved into {evolution}!")
-                        
-                        trained_info.append(f"{pokemon_list[i]} gained {level_gain} levels (now Lv.{new_level})")
+                        evolution = check_evolution(pokemon_name, old_level, new_level)
+                        if evolution:
+                            pokemon_list[i] = evolution
+                            evolutions.append(f"{pokemon_name} evolved into {evolution}!")
                     
-                    # Update database (mod_daily, not regular)
+                    # Update database (mod_daily)
                     data['pokemon'] = pokemon_list
                     data['levels'] = levels
                     data['training_used'] = training_used + 1
@@ -120,8 +126,7 @@ class handler(BaseHTTPRequestHandler):
                     if evolutions:
                         response = f"@{user} trained! {' '.join(evolutions)} ({trainings_left} training sessions left) | {get_time_until_reset()}"
                     else:
-                        level_gains = [f"+{random.randint(3,8)}" for _ in pokemon_list]
-                        response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains)}! ({trainings_left} training sessions left) | {get_time_until_reset()}"
+                        response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains_display)}! ({trainings_left} training sessions left) | {get_time_until_reset()}"
                     
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain')
@@ -178,29 +183,22 @@ class handler(BaseHTTPRequestHandler):
                 return
             
             # Train all Pokemon
-            trained_info = []
             evolutions = []
+            level_gains_display = []
             
             for i in range(len(pokemon_list)):
                 old_level = levels[i]
                 level_gain = random.randint(3, 8)
                 new_level = min(old_level + level_gain, 100)
                 levels[i] = new_level
+                level_gains_display.append(f"+{level_gain}")
                 
-                # Check for evolution - FIXED: using correct field names
+                # Check for evolution using Firestore
                 pokemon_name = pokemon_list[i]
-                poke_data = POKEMON_DATA.get(pokemon_name, {})
-                
-                # Check if this Pokemon can evolve
-                if poke_data.get('can_evolve', False):
-                    evolution = poke_data.get('evolves_to')
-                    evo_level = poke_data.get('min_level_to_evolve')
-                    
-                    if evolution and evo_level and old_level < evo_level <= new_level:
-                        pokemon_list[i] = evolution
-                        evolutions.append(f"{pokemon_name} evolved into {evolution}!")
-                
-                trained_info.append(f"{pokemon_list[i]} gained {level_gain} levels (now Lv.{new_level})")
+                evolution = check_evolution(pokemon_name, old_level, new_level)
+                if evolution:
+                    pokemon_list[i] = evolution
+                    evolutions.append(f"{pokemon_name} evolved into {evolution}!")
             
             # Update database
             data['pokemon'] = pokemon_list
@@ -214,8 +212,7 @@ class handler(BaseHTTPRequestHandler):
             if evolutions:
                 response = f"@{user} trained! {' '.join(evolutions)} ({trainings_left} training sessions left)"
             else:
-                level_gains = [f"+{random.randint(3,8)}" for _ in pokemon_list]
-                response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains)}! ({trainings_left} training sessions left)"
+                response = f"@{user}'s Pokemon gained levels: {', '.join(level_gains_display)}! ({trainings_left} training sessions left)"
             
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
