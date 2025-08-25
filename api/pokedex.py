@@ -2,8 +2,17 @@
 from http.server import BaseHTTPRequestHandler
 import urllib.parse
 import random
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
+import os
 from datetime import datetime, timezone, timedelta
-from pokemon_data import POKEMON_DATA
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate(json.loads(os.environ.get('FIREBASE_CREDS')))
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -14,6 +23,29 @@ def get_time_until_reset():
     minutes = int((time_until.total_seconds() % 3600) // 60)
     seconds = int(time_until.total_seconds() % 60)
     return f"GAME RESETS IN {hours} HRS, {minutes} MINS, {seconds} SECS"
+
+def get_pokemon_info(pokemon_name):
+    """Get Pokemon info from Firestore"""
+    try:
+        doc = db.collection('pokemon_data').document(pokemon_name).get()
+        if doc.exists:
+            return doc.to_dict()
+    except:
+        pass
+    return None
+
+def get_random_pokemon():
+    """Get a random Pokemon from Firestore"""
+    try:
+        # Get all Pokemon documents
+        docs = db.collection('pokemon_data').limit(1000).get()
+        if docs:
+            # Pick a random one
+            random_doc = random.choice(docs)
+            return random_doc.id, random_doc.to_dict()
+    except:
+        pass
+    return None, None
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -36,26 +68,28 @@ class handler(BaseHTTPRequestHandler):
         user_level = params.get('user_level', [''])[0].lower()
         
         # Check if stream is offline
-        if not uptime or uptime == 'offline':
-            # Check if user is a moderator
-            if user_level in ['owner', 'moderator']:
+        is_offline = not uptime or uptime.lower() == 'offline'
+        is_mod = user_level in ['owner', 'moderator']
+        
+        if is_offline:
+            if is_mod:
                 # Moderator can use pokedex offline
                 try:
                     if pokemon_param:
                         # Specific Pokemon lookup
-                        pokemon_name = pokemon_param.lower().capitalize()
+                        pokemon_name = pokemon_param.strip().title()
+                        info = get_pokemon_info(pokemon_name)
                         
-                        if pokemon_name in POKEMON_DATA:
-                            info = POKEMON_DATA[pokemon_name]
+                        if info:
                             ptype = info.get('type', 'Unknown')
                             species = info.get('species', 'Unknown Pokemon')
-                            entry = info.get('entry', 'No data available.')  # FIXED: using 'entry' instead of 'pokedex_entry'
+                            entry = info.get('entry', 'No data available.')
                             
                             # Truncate entry for chat
                             if len(entry) > 200:
                                 entry = entry[:197] + "..."
                             
-                            # Get evolution info - FIXED: using 'evolution' field
+                            # Get evolution info
                             evolution_chain = info.get('evolution', 'No evolution')
                             
                             response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry} | {get_time_until_reset()}"
@@ -63,16 +97,19 @@ class handler(BaseHTTPRequestHandler):
                             response = f"@{user}, {pokemon_name} not found in the Pokedex! | {get_time_until_reset()}"
                     else:
                         # Random Pokemon fact
-                        pokemon_name = random.choice(list(POKEMON_DATA.keys()))
-                        info = POKEMON_DATA[pokemon_name]
-                        ptype = info.get('type', 'Unknown')
-                        entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
+                        pokemon_name, info = get_random_pokemon()
                         
-                        # Truncate for random facts
-                        if len(entry) > 150:
-                            entry = entry[:147] + "..."
-                        
-                        response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry} | {get_time_until_reset()}"
+                        if info:
+                            ptype = info.get('type', 'Unknown')
+                            entry = info.get('entry', 'No data available.')
+                            
+                            # Truncate for random facts
+                            if len(entry) > 150:
+                                entry = entry[:147] + "..."
+                            
+                            response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry} | {get_time_until_reset()}"
+                        else:
+                            response = f"Pokedex database error! | {get_time_until_reset()}"
                     
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain')
@@ -98,52 +135,54 @@ class handler(BaseHTTPRequestHandler):
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
                 self.wfile.write(response.encode())
-            return
-        
-        # ONLINE PLAY - Regular logic
-        try:
-            if pokemon_param:
-                # Specific Pokemon lookup
-                pokemon_name = pokemon_param.lower().capitalize()
-                
-                if pokemon_name in POKEMON_DATA:
-                    info = POKEMON_DATA[pokemon_name]
-                    ptype = info.get('type', 'Unknown')
-                    species = info.get('species', 'Unknown Pokemon')
-                    entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
+        else:
+            # ONLINE PLAY - Regular logic
+            try:
+                if pokemon_param:
+                    # Specific Pokemon lookup
+                    pokemon_name = pokemon_param.strip().title()
+                    info = get_pokemon_info(pokemon_name)
                     
-                    # Truncate entry for chat
-                    if len(entry) > 200:
-                        entry = entry[:197] + "..."
-                    
-                    # Get evolution info - FIXED: using 'evolution' field
-                    evolution_chain = info.get('evolution', 'No evolution')
-                    
-                    response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
+                    if info:
+                        ptype = info.get('type', 'Unknown')
+                        species = info.get('species', 'Unknown Pokemon')
+                        entry = info.get('entry', 'No data available.')
+                        
+                        # Truncate entry for chat
+                        if len(entry) > 200:
+                            entry = entry[:197] + "..."
+                        
+                        # Get evolution info
+                        evolution_chain = info.get('evolution', 'No evolution')
+                        
+                        response = f"📖 {pokemon_name} ({ptype}) - {species} | Evolution: {evolution_chain} | {entry}"
+                    else:
+                        response = f"@{user}, {pokemon_name} not found in the Pokedex!"
                 else:
-                    response = f"@{user}, {pokemon_name} not found in the Pokedex!"
-            else:
-                # Random Pokemon fact
-                pokemon_name = random.choice(list(POKEMON_DATA.keys()))
-                info = POKEMON_DATA[pokemon_name]
-                ptype = info.get('type', 'Unknown')
-                entry = info.get('entry', 'No data available.')  # FIXED: using 'entry'
+                    # Random Pokemon fact
+                    pokemon_name, info = get_random_pokemon()
+                    
+                    if info:
+                        ptype = info.get('type', 'Unknown')
+                        entry = info.get('entry', 'No data available.')
+                        
+                        # Truncate for random facts
+                        if len(entry) > 150:
+                            entry = entry[:147] + "..."
+                        
+                        response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry}"
+                    else:
+                        response = "Pokedex database error!"
                 
-                # Truncate for random facts
-                if len(entry) > 150:
-                    entry = entry[:147] + "..."
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(response.encode())
                 
-                response = f"📖 Random Pokemon: {pokemon_name} ({ptype}) - {entry}"
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(response.encode())
-            
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'text/plain')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(f"Pokedex error!".encode())
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(f"Pokedex error!".encode())
