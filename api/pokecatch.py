@@ -15,7 +15,10 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA, LEGENDARIES
+from pokemon_data import POKEMON_DATA, TYPE_ADVANTAGES
+
+# Extract legendaries from POKEMON_DATA
+LEGENDARIES = [name for name, data in POKEMON_DATA.items() if data.get('legendary', False)]
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -70,30 +73,62 @@ class handler(BaseHTTPRequestHandler):
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                             response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Daily re-roll used) | {get_time_until_reset()}"
                         else:
-                            response = f"@{user}, you can re-roll your team once by using !pokecatch again. Current team: {', '.join(pokemon_list)} | {get_time_until_reset()}"
+                            # Re-roll logic
+                            caught = []
+                            levels = []
+                            
+                            for _ in range(5):
+                                if random.random() < 0.03:  # 3% legendary chance
+                                    pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                                    level = random.randint(40, 50)
+                                else:
+                                    # Get non-legendary Pokemon
+                                    non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
+                                    pokemon = random.choice(non_legendaries)
+                                    poke_info = POKEMON_DATA[pokemon]
+                                    
+                                    # Use catch_level_min and catch_level_max from your data
+                                    min_level = poke_info.get('catch_level_min', 5)
+                                    max_level = poke_info.get('catch_level_max', 45)
+                                    level = random.randint(min_level, max_level)
+                                
+                                caught.append(pokemon)
+                                levels.append(level)
+                            
+                            # Update with re-roll
+                            catch_ref.update({
+                                'pokemon': caught,
+                                'levels': levels,
+                                'catch_count': 2,
+                                'caught_at': firestore.SERVER_TIMESTAMP
+                            })
+                            
+                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
+                            response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! | {get_time_until_reset()}"
                     else:
-                        # Catch 5 Pokemon with levels
+                        # First catch of the day for mod
                         caught = []
                         levels = []
                         
                         for _ in range(5):
                             if random.random() < 0.03:  # 3% legendary chance
-                                pokemon = random.choice(LEGENDARIES)
+                                pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
                                 level = random.randint(40, 50)
                             else:
-                                pokemon = random.choice([p for p in POKEMON_DATA.keys() if p not in LEGENDARIES])
+                                # Get non-legendary Pokemon
+                                non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
+                                pokemon = random.choice(non_legendaries)
                                 poke_info = POKEMON_DATA[pokemon]
-                                if poke_info.get('evolution_stage') == 1:
-                                    level = random.randint(5, 20)
-                                elif poke_info.get('evolution_stage') == 2:
-                                    level = random.randint(15, 35)
-                                else:
-                                    level = random.randint(20, 45)
+                                
+                                # Use catch_level_min and catch_level_max from your data
+                                min_level = poke_info.get('catch_level_min', 5)
+                                max_level = poke_info.get('catch_level_max', 45)
+                                level = random.randint(min_level, max_level)
                             
                             caught.append(pokemon)
                             levels.append(level)
                         
-                        # Save to mod_daily database (not regular catches)
+                        # Save to mod_daily database
                         catch_ref.set({
                             'pokemon': caught,
                             'levels': levels,
@@ -146,25 +181,57 @@ class handler(BaseHTTPRequestHandler):
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                     response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
                 else:
-                    response = f"@{user}, you can re-roll your team once by using !pokecatch again. Current team: {', '.join(pokemon_list)}"
+                    # Re-roll logic
+                    caught = []
+                    levels = []
+                    
+                    for _ in range(5):
+                        if random.random() < 0.03:  # 3% legendary chance
+                            pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
+                            level = random.randint(40, 50)
+                        else:
+                            # Get non-legendary Pokemon
+                            non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
+                            pokemon = random.choice(non_legendaries)
+                            poke_info = POKEMON_DATA[pokemon]
+                            
+                            # Use catch_level_min and catch_level_max from your data
+                            min_level = poke_info.get('catch_level_min', 5)
+                            max_level = poke_info.get('catch_level_max', 45)
+                            level = random.randint(min_level, max_level)
+                        
+                        caught.append(pokemon)
+                        levels.append(level)
+                    
+                    # Update with re-roll
+                    catch_ref.update({
+                        'pokemon': caught,
+                        'levels': levels,
+                        'catch_count': 2,
+                        'caught_at': firestore.SERVER_TIMESTAMP
+                    })
+                    
+                    pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
+                    response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! Use !pokebattle to battle trainers or !poketrain to level up!"
             else:
-                # Catch 5 Pokemon with levels
+                # First catch this stream
                 caught = []
                 levels = []
                 
                 for _ in range(5):
                     if random.random() < 0.03:  # 3% legendary chance
-                        pokemon = random.choice(LEGENDARIES)
+                        pokemon = random.choice(LEGENDARIES) if LEGENDARIES else random.choice(list(POKEMON_DATA.keys()))
                         level = random.randint(40, 50)
                     else:
-                        pokemon = random.choice([p for p in POKEMON_DATA.keys() if p not in LEGENDARIES])
+                        # Get non-legendary Pokemon
+                        non_legendaries = [p for p in POKEMON_DATA.keys() if not POKEMON_DATA[p].get('legendary', False)]
+                        pokemon = random.choice(non_legendaries)
                         poke_info = POKEMON_DATA[pokemon]
-                        if poke_info.get('evolution_stage') == 1:
-                            level = random.randint(5, 20)
-                        elif poke_info.get('evolution_stage') == 2:
-                            level = random.randint(15, 35)
-                        else:
-                            level = random.randint(20, 45)
+                        
+                        # Use catch_level_min and catch_level_max from your data
+                        min_level = poke_info.get('catch_level_min', 5)
+                        max_level = poke_info.get('catch_level_max', 45)
+                        level = random.randint(min_level, max_level)
                     
                     caught.append(pokemon)
                     levels.append(level)
