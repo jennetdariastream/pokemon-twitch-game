@@ -115,19 +115,8 @@ class handler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(f"Error retrieving Pokemon!".encode())
             else:
-                # Regular user offline - check if they have any Pokemon ever
-                all_catches = db.collection_group('users').where('__name__', '==', user).stream()
-                has_pokemon = False
-                
-                for doc in all_catches:
-                    if doc.exists:
-                        has_pokemon = True
-                        break
-                
-                if not has_pokemon:
-                    response = f"@{user}, you have no pokemon. Please make sure to follow Jennet and come back when Jennet is live to catch, train, and battle pokemon!"
-                else:
-                    response = f"@{user}, Pokemon stats are only available during live streams! Come back when Jennet is live!"
+                # Regular user offline - always show same message
+                response = f"@{user}, you cannot view Pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to view your Pokemon!"
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
