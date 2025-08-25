@@ -15,9 +15,9 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA, TYPE_ADVANTAGES
+from pokemon_data import POKEMON_DATA
 
-# Extract legendaries from POKEMON_DATA
+# Extract legendaries dynamically from POKEMON_DATA
 LEGENDARIES = [name for name, data in POKEMON_DATA.items() if data.get('legendary', False)]
 
 def get_time_until_reset():
