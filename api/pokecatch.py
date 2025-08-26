@@ -122,21 +122,8 @@ class handler(BaseHTTPRequestHandler):
                         data = catch_doc.to_dict()
                         catch_count = data.get('catch_count', 0)
                         
-                        if catch_count == 0:
-                            # Should never happen, but handle it
-                            caught, levels = catch_pokemon()
-                            catch_ref.set({
-                                'pokemon': caught,
-                                'levels': levels,
-                                'catch_count': 1,
-                                'training_used': 0,
-                                'battles_used': 0,
-                                'caught_at': firestore.SERVER_TIMESTAMP
-                            })
-                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                            response = f"@{user} caught: {', '.join(pokemon_with_levels)}! You can re-roll your team once by using !pokecatch again! | {get_time_until_reset()}"
-                        elif catch_count == 1:
-                            # First catch done, allow re-roll but preserve training_used
+                        if catch_count == 1:
+                            # First catch done, DO the re-roll and preserve counts
                             caught, levels = catch_pokemon()
                             existing_training = data.get('training_used', 0)
                             existing_battles = data.get('battles_used', 0)
@@ -152,12 +139,25 @@ class handler(BaseHTTPRequestHandler):
                             
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
                             response = f"@{user} RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! (Re-roll used) | {get_time_until_reset()}"
-                        else:
-                            # Already used both catches (catch_count >= 2)
+                        elif catch_count >= 2:
+                            # Already used both catches
                             pokemon_list = data.get('pokemon', [])
                             levels = data.get('levels', [])
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                             response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Re-roll used) | {get_time_until_reset()}"
+                        else:
+                            # catch_count = 0, shouldn't happen but handle it
+                            caught, levels = catch_pokemon()
+                            catch_ref.set({
+                                'pokemon': caught,
+                                'levels': levels,
+                                'catch_count': 1,
+                                'training_used': 0,
+                                'battles_used': 0,
+                                'caught_at': firestore.SERVER_TIMESTAMP
+                            })
+                            pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
+                            response = f"@{user} caught: {', '.join(pokemon_with_levels)}! You can re-roll your team once by using !pokecatch again! | {get_time_until_reset()}"
                     else:
                         # First catch of the day
                         caught, levels = catch_pokemon()
@@ -207,27 +207,8 @@ class handler(BaseHTTPRequestHandler):
                 data = catch_doc.to_dict()
                 catch_count = data.get('catch_count', 0)
                 
-                if catch_count == 0:
-                    # Should never happen, but handle it
-                    caught, levels = catch_pokemon()
-                    catch_ref.set({
-                        'pokemon': caught,
-                        'levels': levels,
-                        'catch_count': 1,
-                        'training_used': 0,
-                        'battles_used': 0,
-                        'caught_at': firestore.SERVER_TIMESTAMP
-                    })
-                    pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
-                    response = f"@{user} caught: {', '.join(pokemon_with_levels)}! You can re-roll your team once by using !pokecatch again!"
-                elif catch_count == 1:
-                    # Can re-roll - preserve training/battle counts
-                    pokemon_list = data.get('pokemon', [])
-                    current_levels = data.get('levels', [])
-                    current_pokemon = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, current_levels)]
-                    response = f"@{user}, you can re-roll your team once by using !pokecatch again. Current team: {', '.join(current_pokemon)}"
-                    
-                    # Actually do the re-roll
+                if catch_count == 1:
+                    # First catch done, DO the re-roll directly
                     caught, levels = catch_pokemon()
                     existing_training = data.get('training_used', 0)
                     existing_battles = data.get('battles_used', 0)
@@ -243,12 +224,25 @@ class handler(BaseHTTPRequestHandler):
                     
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
                     response = f"@{user}, you RE-ROLLED and caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
-                else:
-                    # Already used both catches (catch_count >= 2)
+                elif catch_count >= 2:
+                    # Already used both catches
                     pokemon_list = data.get('pokemon', [])
                     levels = data.get('levels', [])
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(pokemon_list, levels)]
                     response = f"@{user}, you already caught: {', '.join(pokemon_with_levels)}! (Re-roll used)"
+                else:
+                    # catch_count = 0, shouldn't happen but handle it
+                    caught, levels = catch_pokemon()
+                    catch_ref.set({
+                        'pokemon': caught,
+                        'levels': levels,
+                        'catch_count': 1,
+                        'training_used': 0,
+                        'battles_used': 0,
+                        'caught_at': firestore.SERVER_TIMESTAMP
+                    })
+                    pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
+                    response = f"@{user} caught: {', '.join(pokemon_with_levels)}! You can re-roll your team once by using !pokecatch again!"
             else:
                 # First catch this stream
                 caught, levels = catch_pokemon()
