@@ -151,7 +151,7 @@ class handler(BaseHTTPRequestHandler):
         channel = params.get('channel', [''])[0].lower()
         if channel != 'jennetdaria':
             self.send_response(403)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(b"Unauthorized: This channel is not permitted to use this command.")
@@ -160,7 +160,7 @@ class handler(BaseHTTPRequestHandler):
         # Load battle data from Firestore
         if not load_battle_data():
             self.send_response(500)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(b"Error: Could not load battle data from database.")
@@ -186,10 +186,10 @@ class handler(BaseHTTPRequestHandler):
                     if not user_catch.exists:
                         response = f"@{user}, you haven't caught any Pokemon today! Use !pokecatch first! | {get_time_until_reset()}"
                         self.send_response(200)
-                        self.send_header('Content-type', 'text/plain')
+                        self.send_header('Content-type', 'text/plain; charset=utf-8')
                         self.send_header('Access-Control-Allow-Origin', '*')
                         self.end_headers()
-                        self.wfile.write(response.encode())
+                        self.wfile.write(response.encode('utf-8'))
                         return
                     
                     user_data = user_catch.to_dict()
@@ -202,10 +202,10 @@ class handler(BaseHTTPRequestHandler):
                     if battles_used >= 2:
                         response = f"@{user}, you've battled twice today! Wait for the daily reset! | {get_time_until_reset()}"
                         self.send_response(200)
-                        self.send_header('Content-type', 'text/plain')
+                        self.send_header('Content-type', 'text/plain; charset=utf-8')
                         self.send_header('Access-Control-Allow-Origin', '*')
                         self.end_headers()
-                        self.wfile.write(response.encode())
+                        self.wfile.write(response.encode('utf-8'))
                         return
                     
                     # Find opponent
@@ -214,10 +214,10 @@ class handler(BaseHTTPRequestHandler):
                         if target == user:
                             response = f"@{user}, you can't battle yourself! | {get_time_until_reset()}"
                             self.send_response(200)
-                            self.send_header('Content-type', 'text/plain')
+                            self.send_header('Content-type', 'text/plain; charset=utf-8')
                             self.send_header('Access-Control-Allow-Origin', '*')
                             self.end_headers()
-                            self.wfile.write(response.encode())
+                            self.wfile.write(response.encode('utf-8'))
                             return
                         
                         opp_catch = db.collection('mod_daily').document(daily_id).collection('users').document(target).get()
@@ -225,10 +225,10 @@ class handler(BaseHTTPRequestHandler):
                         if not opp_catch.exists:
                             response = f"@{user}, {target} hasn't caught any Pokemon today! | {get_time_until_reset()}"
                             self.send_response(200)
-                            self.send_header('Content-type', 'text/plain')
+                            self.send_header('Content-type', 'text/plain; charset=utf-8')
                             self.send_header('Access-Control-Allow-Origin', '*')
                             self.end_headers()
-                            self.wfile.write(response.encode())
+                            self.wfile.write(response.encode('utf-8'))
                             return
                         
                         opponent = target
@@ -245,10 +245,10 @@ class handler(BaseHTTPRequestHandler):
                         if not potential_opponents:
                             response = f"@{user}, no opponents available in offline mode! | {get_time_until_reset()}"
                             self.send_response(200)
-                            self.send_header('Content-type', 'text/plain')
+                            self.send_header('Content-type', 'text/plain; charset=utf-8')
                             self.send_header('Access-Control-Allow-Origin', '*')
                             self.end_headers()
-                            self.wfile.write(response.encode())
+                            self.wfile.write(response.encode('utf-8'))
                             return
                         
                         opponent, opp_data = random.choice(potential_opponents)
@@ -269,6 +269,12 @@ class handler(BaseHTTPRequestHandler):
                         'battles_used': battles_used + 1
                     })
                     
+                    # Update battle count for opponent (ALWAYS - targeted or random)
+                    opp_catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(opponent)
+                    opp_catch_ref.update({
+                        'battles_used': opp_data.get('battles_used', 0) + 1
+                    })
+                    
                     # Format response with countdown
                     if winner == 1:
                         emoji = "🏆"
@@ -282,25 +288,25 @@ class handler(BaseHTTPRequestHandler):
                     response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battle{'s' if battles_left != 1 else ''} left) | {get_time_until_reset()}"
                     
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     
                 except Exception as e:
                     self.send_response(500)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(f"Error in battle!".encode())
+                    self.wfile.write(f"Error in battle!".encode('utf-8'))
             else:
                 # Regular user offline message
                 response = f"@{user}, you cannot battle pokemon while Jennet is offline. Please make sure to follow Jennet and come back when Jennet is live to catch and battle pokemon!"
                 self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(response.encode())
+                self.wfile.write(response.encode('utf-8'))
             return
         
         # ONLINE PLAY - Regular stream logic
@@ -313,10 +319,10 @@ class handler(BaseHTTPRequestHandler):
             if not user_catch.exists:
                 response = f"@{user}, you haven't caught any Pokemon yet! Use !pokecatch first!"
                 self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(response.encode())
+                self.wfile.write(response.encode('utf-8'))
                 return
             
             user_data = user_catch.to_dict()
@@ -329,10 +335,10 @@ class handler(BaseHTTPRequestHandler):
             if battles_used >= 2:
                 response = f"@{user}, you've battled twice this stream! Wait for the next stream!"
                 self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(response.encode())
+                self.wfile.write(response.encode('utf-8'))
                 return
             
             # Find opponent
@@ -341,10 +347,10 @@ class handler(BaseHTTPRequestHandler):
                 if target == user:
                     response = f"@{user}, you can't battle yourself! Use !pokebattle without a target for a random opponent!"
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     return
                 
                 opp_catch = db.collection('catches').document(stream_id).collection('users').document(target).get()
@@ -352,10 +358,10 @@ class handler(BaseHTTPRequestHandler):
                 if not opp_catch.exists:
                     response = f"@{user}, {target} hasn't caught any Pokemon yet! Tell them to use !pokecatch!"
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     return
                 
                 # Check if target has battles left
@@ -364,10 +370,10 @@ class handler(BaseHTTPRequestHandler):
                 if opp_battles >= 2:
                     response = f"@{user}, {target} is too tired to battle (already battled twice)! Try someone else!"
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     return
                 
                 opponent = target
@@ -385,10 +391,10 @@ class handler(BaseHTTPRequestHandler):
                 if not potential_opponents:
                     response = f"@{user}, no opponents available! Encourage others to !pokecatch!"
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
-                    self.wfile.write(response.encode())
+                    self.wfile.write(response.encode('utf-8'))
                     return
                 
                 opponent, opp_data = random.choice(potential_opponents)
@@ -409,12 +415,11 @@ class handler(BaseHTTPRequestHandler):
                 'battles_used': battles_used + 1
             })
             
-            # Update battle count for opponent (if targeted)
-            if target:
-                opp_catch_ref = db.collection('catches').document(stream_id).collection('users').document(opponent)
-                opp_catch_ref.update({
-                    'battles_used': opp_battles + 1
-                })
+            # Update battle count for opponent (ALWAYS - targeted or random)
+            opp_catch_ref = db.collection('catches').document(stream_id).collection('users').document(opponent)
+            opp_catch_ref.update({
+                'battles_used': opp_data.get('battles_used', 0) + 1
+            })
             
             # Update leaderboard for user
             leaderboard_ref = db.collection('leaderboard').document(user)
@@ -437,27 +442,26 @@ class handler(BaseHTTPRequestHandler):
             lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
             leaderboard_ref.set(lb_data)
             
-            # Update leaderboard for opponent (if targeted)
-            if target:
-                opp_leaderboard_ref = db.collection('leaderboard').document(opponent)
-                opp_leaderboard_doc = opp_leaderboard_ref.get()
-                
-                if opp_leaderboard_doc.exists:
-                    opp_lb_data = opp_leaderboard_doc.to_dict()
-                    opp_lb_data['total_battles'] = opp_lb_data.get('total_battles', 0) + 1
-                    if winner == 2:
-                        opp_lb_data['total_wins'] = opp_lb_data.get('total_wins', 0) + 1
-                    else:
-                        opp_lb_data['total_losses'] = opp_lb_data.get('total_losses', 0) + 1
+            # Update leaderboard for opponent (ALWAYS - targeted or random)
+            opp_leaderboard_ref = db.collection('leaderboard').document(opponent)
+            opp_leaderboard_doc = opp_leaderboard_ref.get()
+            
+            if opp_leaderboard_doc.exists:
+                opp_lb_data = opp_leaderboard_doc.to_dict()
+                opp_lb_data['total_battles'] = opp_lb_data.get('total_battles', 0) + 1
+                if winner == 2:
+                    opp_lb_data['total_wins'] = opp_lb_data.get('total_wins', 0) + 1
                 else:
-                    opp_lb_data = {
-                        'total_battles': 1,
-                        'total_wins': 1 if winner == 2 else 0,
-                        'total_losses': 1 if winner == 1 else 0
-                    }
-                
-                opp_lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
-                opp_leaderboard_ref.set(opp_lb_data)
+                    opp_lb_data['total_losses'] = opp_lb_data.get('total_losses', 0) + 1
+            else:
+                opp_lb_data = {
+                    'total_battles': 1,
+                    'total_wins': 1 if winner == 2 else 0,
+                    'total_losses': 1 if winner == 1 else 0
+                }
+            
+            opp_lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
+            opp_leaderboard_ref.set(opp_lb_data)
             
             # Also update legends collection for user
             legends_ref = db.collection('legends').document(user)
@@ -480,27 +484,26 @@ class handler(BaseHTTPRequestHandler):
             legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
             legends_ref.set(legend_data)
             
-            # Update legends for opponent (if targeted)
-            if target:
-                opp_legends_ref = db.collection('legends').document(opponent)
-                opp_legends_doc = opp_legends_ref.get()
-                
-                if opp_legends_doc.exists:
-                    opp_legend_data = opp_legends_doc.to_dict()
-                    opp_legend_data['total_battles'] = opp_legend_data.get('total_battles', 0) + 1
-                    if winner == 2:
-                        opp_legend_data['total_wins'] = opp_legend_data.get('total_wins', 0) + 1
-                    else:
-                        opp_legend_data['total_losses'] = opp_legend_data.get('total_losses', 0) + 1
+            # Update legends for opponent (ALWAYS - targeted or random)
+            opp_legends_ref = db.collection('legends').document(opponent)
+            opp_legends_doc = opp_legends_ref.get()
+            
+            if opp_legends_doc.exists:
+                opp_legend_data = opp_legends_doc.to_dict()
+                opp_legend_data['total_battles'] = opp_legend_data.get('total_battles', 0) + 1
+                if winner == 2:
+                    opp_legend_data['total_wins'] = opp_legend_data.get('total_wins', 0) + 1
                 else:
-                    opp_legend_data = {
-                        'total_battles': 1,
-                        'total_wins': 1 if winner == 2 else 0,
-                        'total_losses': 1 if winner == 1 else 0
-                    }
-                
-                opp_legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
-                opp_legends_ref.set(opp_legend_data)
+                    opp_legend_data['total_losses'] = opp_legend_data.get('total_losses', 0) + 1
+            else:
+                opp_legend_data = {
+                    'total_battles': 1,
+                    'total_wins': 1 if winner == 2 else 0,
+                    'total_losses': 1 if winner == 1 else 0
+                }
+            
+            opp_legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
+            opp_legends_ref.set(opp_legend_data)
             
             # Format response
             if winner == 1:
@@ -515,14 +518,14 @@ class handler(BaseHTTPRequestHandler):
             response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battle{'s' if battles_left != 1 else ''} left)"
             
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(response.encode())
+            self.wfile.write(response.encode('utf-8'))
             
         except Exception as e:
             self.send_response(500)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(f"Error in battle!".encode())
+            self.wfile.write(f"Error in battle!".encode('utf-8'))
