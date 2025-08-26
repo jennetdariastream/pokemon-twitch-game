@@ -123,17 +123,13 @@ class handler(BaseHTTPRequestHandler):
                         catch_count = data.get('catch_count', 0)
                         
                         if catch_count == 1:
-                            # First catch done, DO the re-roll and preserve counts
+                            # First catch done, DO the re-roll
                             caught, levels = catch_pokemon()
-                            existing_training = data.get('training_used', 0)
-                            existing_battles = data.get('battles_used', 0)
                             
                             catch_ref.update({
                                 'pokemon': caught,
                                 'levels': levels,
                                 'catch_count': 2,
-                                'training_used': existing_training,  # Preserve training count
-                                'battles_used': existing_battles,  # Preserve battle count
                                 'caught_at': firestore.SERVER_TIMESTAMP
                             })
                             
@@ -152,8 +148,6 @@ class handler(BaseHTTPRequestHandler):
                                 'pokemon': caught,
                                 'levels': levels,
                                 'catch_count': 1,
-                                'training_used': 0,
-                                'battles_used': 0,
                                 'caught_at': firestore.SERVER_TIMESTAMP
                             })
                             pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
@@ -166,8 +160,6 @@ class handler(BaseHTTPRequestHandler):
                             'pokemon': caught,
                             'levels': levels,
                             'catch_count': 1,
-                            'training_used': 0,
-                            'battles_used': 0,
                             'caught_at': firestore.SERVER_TIMESTAMP
                         })
                         
@@ -210,15 +202,11 @@ class handler(BaseHTTPRequestHandler):
                 if catch_count == 1:
                     # First catch done, DO the re-roll directly
                     caught, levels = catch_pokemon()
-                    existing_training = data.get('training_used', 0)
-                    existing_battles = data.get('battles_used', 0)
                     
                     catch_ref.update({
                         'pokemon': caught,
                         'levels': levels,
                         'catch_count': 2,
-                        'training_used': existing_training,  # Preserve training count
-                        'battles_used': existing_battles,  # Preserve battle count
                         'caught_at': firestore.SERVER_TIMESTAMP
                     })
                     
@@ -237,8 +225,6 @@ class handler(BaseHTTPRequestHandler):
                         'pokemon': caught,
                         'levels': levels,
                         'catch_count': 1,
-                        'training_used': 0,
-                        'battles_used': 0,
                         'caught_at': firestore.SERVER_TIMESTAMP
                     })
                     pokemon_with_levels = [f"{p} (Lv.{l})" for p, l in zip(caught, levels)]
@@ -251,8 +237,6 @@ class handler(BaseHTTPRequestHandler):
                     'pokemon': caught,
                     'levels': levels,
                     'catch_count': 1,
-                    'training_used': 0,
-                    'battles_used': 0,
                     'caught_at': firestore.SERVER_TIMESTAMP
                 })
                 
