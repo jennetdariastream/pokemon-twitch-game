@@ -209,7 +209,7 @@ class handler(BaseHTTPRequestHandler):
                         return
                     
                     # Find opponent
-                    if target:
+                    if target and target.lower() != 'random':
                         target = target.lower().replace('@', '')
                         if target == user:
                             response = f"@{user}, you can't battle yourself! | {get_time_until_reset()}"
@@ -342,10 +342,10 @@ class handler(BaseHTTPRequestHandler):
                 return
             
             # Find opponent
-            if target:
+            if target and target.lower() != 'random':
                 target = target.lower().replace('@', '')
                 if target == user:
-                    response = f"@{user}, you can't battle yourself! Use !pokebattle without a target for a random opponent!"
+                    response = f"@{user}, you can't battle yourself! Use !pokebattle random for a random opponent!"
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain; charset=utf-8')
                     self.send_header('Access-Control-Allow-Origin', '*')
