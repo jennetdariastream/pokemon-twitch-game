@@ -15,10 +15,39 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-from pokemon_data import POKEMON_DATA, TYPE_ADVANTAGES
+# Cache for Pokemon data
+POKEMON_CACHE = {}
+TYPE_ADVANTAGES_CACHE = {}
+LEGENDARIES_CACHE = []
+CACHE_LOADED = False
 
-# Extract legendaries dynamically
-LEGENDARIES = [name for name, data in POKEMON_DATA.items() if data.get('legendary', False)]
+def load_battle_data():
+    """Load Pokemon data and type advantages from Firestore"""
+    global POKEMON_CACHE, TYPE_ADVANTAGES_CACHE, LEGENDARIES_CACHE, CACHE_LOADED
+    
+    if CACHE_LOADED:
+        return True
+    
+    try:
+        # Load type advantages
+        type_doc = db.collection('game_config').document('type_advantages').get()
+        if type_doc.exists:
+            TYPE_ADVANTAGES_CACHE = type_doc.to_dict().get('data', {})
+        
+        # Load legendaries
+        legends_doc = db.collection('game_config').document('legendaries').get()
+        if legends_doc.exists:
+            LEGENDARIES_CACHE = legends_doc.to_dict().get('list', [])
+        
+        # Load all Pokemon data
+        pokemon_docs = db.collection('pokemon_data').stream()
+        for doc in pokemon_docs:
+            POKEMON_CACHE[doc.id] = doc.to_dict()
+        
+        CACHE_LOADED = True
+        return True
+    except:
+        return False
 
 def get_time_until_reset():
     """Calculate time until 12am UTC"""
@@ -38,11 +67,11 @@ def calculate_power(pokemon_name, level):
     power += min(level * 0.1, 5)
     
     # Legendary bonus (reduced from 10 to 5 for balance)
-    if pokemon_name in LEGENDARIES:
+    if pokemon_name in LEGENDARIES_CACHE:
         power += 5
     
-    # Evolution stage (2-6 points) - FIXED: using 'stage' instead of 'evolution_stage'
-    stage = POKEMON_DATA.get(pokemon_name, {}).get('stage', 1)
+    # Evolution stage (2-6 points)
+    stage = POKEMON_CACHE.get(pokemon_name, {}).get('stage', 1)
     power += stage * 2
     
     return power
@@ -53,14 +82,14 @@ def battle_pokemon(poke1, level1, poke2, level2):
     power2 = calculate_power(poke2, level2)
     
     # Type advantages (increased to 2.0 from 1.5)
-    types1 = POKEMON_DATA.get(poke1, {}).get('type', 'Normal').split('/')
-    types2 = POKEMON_DATA.get(poke2, {}).get('type', 'Normal').split('/')
+    types1 = POKEMON_CACHE.get(poke1, {}).get('type', 'Normal').split('/')
+    types2 = POKEMON_CACHE.get(poke2, {}).get('type', 'Normal').split('/')
     
     for type1 in types1:
         for type2 in types2:
-            if type2 in TYPE_ADVANTAGES.get(type1, []):
+            if type2 in TYPE_ADVANTAGES_CACHE.get(type1, []):
                 power1 += 2.0
-            if type1 in TYPE_ADVANTAGES.get(type2, []):
+            if type1 in TYPE_ADVANTAGES_CACHE.get(type2, []):
                 power2 += 2.0
     
     # Random factor (increased to 0-3 from 0-2)
@@ -128,6 +157,15 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b"Unauthorized: This channel is not permitted to use this command.")
             return
         
+        # Load battle data from Firestore
+        if not load_battle_data():
+            self.send_response(500)
+            self.send_header('Content-type', 'text/plain')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(b"Error: Could not load battle data from database.")
+            return
+        
         user = params.get('user', ['someone'])[0].lower()
         target = params.get('target', [None])[0]
         uptime = params.get('uptime', [None])[0]
@@ -158,27 +196,17 @@ class handler(BaseHTTPRequestHandler):
                     user_pokemon = user_data.get('pokemon', [])
                     user_levels = user_data.get('levels', [])
                     
-                    # Check daily battle limit
-                    battle_ref = db.collection('mod_daily_battles').document(daily_id).collection('users').document(user)
-                    battle_doc = battle_ref.get()
+                    # Check daily battle limit (using separate counter)
+                    battles_used = user_data.get('battles_used', 0)
                     
-                    if battle_doc.exists:
-                        battle_data = battle_doc.to_dict()
-                        battles_done = battle_data.get('battles', 0)
-                        
-                        if battles_done >= 2:
-                            wins = battle_data.get('wins', 0)
-                            losses = battle_data.get('losses', 0)
-                            response = f"@{user}, you've battled twice today ({wins}W-{losses}L)! Wait for the daily reset! | {get_time_until_reset()}"
-                            self.send_response(200)
-                            self.send_header('Content-type', 'text/plain')
-                            self.send_header('Access-Control-Allow-Origin', '*')
-                            self.end_headers()
-                            self.wfile.write(response.encode())
-                            return
-                    else:
-                        battles_done = 0
-                        battle_data = {'battles': 0, 'wins': 0, 'losses': 0}
+                    if battles_used >= 2:
+                        response = f"@{user}, you've battled twice today! Wait for the daily reset! | {get_time_until_reset()}"
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/plain')
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.end_headers()
+                        self.wfile.write(response.encode())
+                        return
                     
                     # Find opponent
                     if target:
@@ -235,44 +263,23 @@ class handler(BaseHTTPRequestHandler):
                         user, opponent
                     )
                     
-                    # Update battle records for BOTH users (mod_daily_battles)
-                    battle_data['battles'] += 1
+                    # Update battle count for user
+                    user_catch_ref = db.collection('mod_daily').document(daily_id).collection('users').document(user)
+                    user_catch_ref.update({
+                        'battles_used': battles_used + 1
+                    })
                     
+                    # Format response with countdown
                     if winner == 1:
-                        battle_data['wins'] += 1
                         emoji = "🏆"
                         result = f"won {user_score}-{opp_score}"
                     else:
-                        battle_data['losses'] += 1
                         emoji = "💔"
                         result = f"lost {user_score}-{opp_score}"
                     
-                    battle_ref.set(battle_data)
-                    
-                    # CRITICAL: ALWAYS update opponent's battle count (targeted or random)
-                    opp_battle_ref = db.collection('mod_daily_battles').document(daily_id).collection('users').document(opponent)
-                    opp_battle_data_existing = opp_battle_ref.get()
-                    
-                    if opp_battle_data_existing.exists:
-                        opp_battle_data = opp_battle_data_existing.to_dict()
-                    else:
-                        opp_battle_data = {'battles': 0, 'wins': 0, 'losses': 0}
-                    
-                    opp_battle_data['battles'] += 1
-                    # Opponent gets opposite result
-                    if winner == 2:  # Opponent won
-                        opp_battle_data['wins'] += 1
-                    else:  # Opponent lost
-                        opp_battle_data['losses'] += 1
-                    
-                    opp_battle_ref.set(opp_battle_data)
-                    
-                    # NO LEADERBOARD UPDATE FOR MOD OFFLINE PLAY
-                    
-                    # Format response with countdown
-                    battles_left = 2 - battle_data['battles']
+                    battles_left = 1 - battles_used
                     battle_text = " | ".join(battle_results)
-                    response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battles left) | {get_time_until_reset()}"
+                    response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battle{'s' if battles_left != 1 else ''} left) | {get_time_until_reset()}"
                     
                     self.send_response(200)
                     self.send_header('Content-type', 'text/plain')
@@ -296,8 +303,7 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(response.encode())
             return
         
-        # ONLINE PLAY - Regular stream logic continues...
-        # [Rest of the online play code remains the same]
+        # ONLINE PLAY - Regular stream logic
         stream_id = hashlib.md5(f"{channel}_{uptime}".encode()).hexdigest()
         
         try:
@@ -317,27 +323,17 @@ class handler(BaseHTTPRequestHandler):
             user_pokemon = user_data.get('pokemon', [])
             user_levels = user_data.get('levels', [])
             
-            # Check battle limit (2 per stream)
-            battle_ref = db.collection('stream_battles').document(stream_id).collection('users').document(user)
-            battle_doc = battle_ref.get()
+            # Check battle limit (using separate counter)
+            battles_used = user_data.get('battles_used', 0)
             
-            if battle_doc.exists:
-                battle_data = battle_doc.to_dict()
-                battles_done = battle_data.get('battles', 0)
-                
-                if battles_done >= 2:
-                    wins = battle_data.get('wins', 0)
-                    losses = battle_data.get('losses', 0)
-                    response = f"@{user}, you've battled twice this stream ({wins}W-{losses}L)! Wait for the next stream!"
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/plain')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(response.encode())
-                    return
-            else:
-                battles_done = 0
-                battle_data = {'battles': 0, 'wins': 0, 'losses': 0}
+            if battles_used >= 2:
+                response = f"@{user}, you've battled twice this stream! Wait for the next stream!"
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(response.encode())
+                return
             
             # Find opponent
             if target:
@@ -363,20 +359,18 @@ class handler(BaseHTTPRequestHandler):
                     return
                 
                 # Check if target has battles left
-                opp_battle_doc = db.collection('stream_battles').document(stream_id).collection('users').document(target).get()
-                if opp_battle_doc.exists:
-                    opp_battles = opp_battle_doc.to_dict().get('battles', 0)
-                    if opp_battles >= 2:
-                        response = f"@{user}, {target} is too tired to battle (already battled twice)! Try someone else!"
-                        self.send_response(200)
-                        self.send_header('Content-type', 'text/plain')
-                        self.send_header('Access-Control-Allow-Origin', '*')
-                        self.end_headers()
-                        self.wfile.write(response.encode())
-                        return
+                opp_data = opp_catch.to_dict()
+                opp_battles = opp_data.get('battles_used', 0)
+                if opp_battles >= 2:
+                    response = f"@{user}, {target} is too tired to battle (already battled twice)! Try someone else!"
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.end_headers()
+                    self.wfile.write(response.encode())
+                    return
                 
                 opponent = target
-                opp_data = opp_catch.to_dict()
             else:
                 # Find random opponent
                 all_catches = db.collection('catches').document(stream_id).collection('users').stream()
@@ -384,9 +378,9 @@ class handler(BaseHTTPRequestHandler):
                 
                 for doc in all_catches:
                     if doc.id != user:
-                        opp_battle = db.collection('stream_battles').document(stream_id).collection('users').document(doc.id).get()
-                        if not opp_battle.exists or opp_battle.to_dict().get('battles', 0) < 2:
-                            potential_opponents.append((doc.id, doc.to_dict()))
+                        doc_data = doc.to_dict()
+                        if doc_data.get('battles_used', 0) < 2:
+                            potential_opponents.append((doc.id, doc_data))
                 
                 if not potential_opponents:
                     response = f"@{user}, no opponents available! Encourage others to !pokecatch!"
@@ -409,39 +403,20 @@ class handler(BaseHTTPRequestHandler):
                 user, opponent
             )
             
-            # Update battle records for BOTH users
-            battle_data['battles'] += 1
+            # Update battle count for user
+            user_catch_ref = db.collection('catches').document(stream_id).collection('users').document(user)
+            user_catch_ref.update({
+                'battles_used': battles_used + 1
+            })
             
-            if winner == 1:
-                battle_data['wins'] += 1
-                emoji = "🏆"
-                result = f"won {user_score}-{opp_score}"
-            else:
-                battle_data['losses'] += 1
-                emoji = "💔"
-                result = f"lost {user_score}-{opp_score}"
+            # Update battle count for opponent (if targeted)
+            if target:
+                opp_catch_ref = db.collection('catches').document(stream_id).collection('users').document(opponent)
+                opp_catch_ref.update({
+                    'battles_used': opp_battles + 1
+                })
             
-            battle_ref.set(battle_data)
-            
-            # CRITICAL: ALWAYS update opponent's battle count (targeted or random)
-            opp_battle_ref = db.collection('stream_battles').document(stream_id).collection('users').document(opponent)
-            opp_battle_data_existing = opp_battle_ref.get()
-            
-            if opp_battle_data_existing.exists:
-                opp_battle_data = opp_battle_data_existing.to_dict()
-            else:
-                opp_battle_data = {'battles': 0, 'wins': 0, 'losses': 0}
-            
-            opp_battle_data['battles'] += 1
-            # Opponent gets opposite result
-            if winner == 2:  # Opponent won
-                opp_battle_data['wins'] += 1
-            else:  # Opponent lost
-                opp_battle_data['losses'] += 1
-            
-            opp_battle_ref.set(opp_battle_data)
-            
-            # Update leaderboard for BOTH users (online play only) - ALWAYS, not just targeted
+            # Update leaderboard for user
             leaderboard_ref = db.collection('leaderboard').document(user)
             leaderboard_doc = leaderboard_ref.get()
             
@@ -462,28 +437,29 @@ class handler(BaseHTTPRequestHandler):
             lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
             leaderboard_ref.set(lb_data)
             
-            # ALWAYS update opponent's leaderboard (targeted or random)
-            opp_leaderboard_ref = db.collection('leaderboard').document(opponent)
-            opp_leaderboard_doc = opp_leaderboard_ref.get()
-            
-            if opp_leaderboard_doc.exists:
-                opp_lb_data = opp_leaderboard_doc.to_dict()
-                opp_lb_data['total_battles'] = opp_lb_data.get('total_battles', 0) + 1
-                if winner == 2:
-                    opp_lb_data['total_wins'] = opp_lb_data.get('total_wins', 0) + 1
+            # Update leaderboard for opponent (if targeted)
+            if target:
+                opp_leaderboard_ref = db.collection('leaderboard').document(opponent)
+                opp_leaderboard_doc = opp_leaderboard_ref.get()
+                
+                if opp_leaderboard_doc.exists:
+                    opp_lb_data = opp_leaderboard_doc.to_dict()
+                    opp_lb_data['total_battles'] = opp_lb_data.get('total_battles', 0) + 1
+                    if winner == 2:
+                        opp_lb_data['total_wins'] = opp_lb_data.get('total_wins', 0) + 1
+                    else:
+                        opp_lb_data['total_losses'] = opp_lb_data.get('total_losses', 0) + 1
                 else:
-                    opp_lb_data['total_losses'] = opp_lb_data.get('total_losses', 0) + 1
-            else:
-                opp_lb_data = {
-                    'total_battles': 1,
-                    'total_wins': 1 if winner == 2 else 0,
-                    'total_losses': 1 if winner == 1 else 0
-                }
+                    opp_lb_data = {
+                        'total_battles': 1,
+                        'total_wins': 1 if winner == 2 else 0,
+                        'total_losses': 1 if winner == 1 else 0
+                    }
+                
+                opp_lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
+                opp_leaderboard_ref.set(opp_lb_data)
             
-            opp_lb_data['last_battle'] = firestore.SERVER_TIMESTAMP
-            opp_leaderboard_ref.set(opp_lb_data)
-            
-            # Also update legends collection for BOTH users
+            # Also update legends collection for user
             legends_ref = db.collection('legends').document(user)
             legends_doc = legends_ref.get()
             
@@ -504,31 +480,39 @@ class handler(BaseHTTPRequestHandler):
             legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
             legends_ref.set(legend_data)
             
-            # ALWAYS update opponent's legends (targeted or random)
-            opp_legends_ref = db.collection('legends').document(opponent)
-            opp_legends_doc = opp_legends_ref.get()
-            
-            if opp_legends_doc.exists:
-                opp_legend_data = opp_legends_doc.to_dict()
-                opp_legend_data['total_battles'] = opp_legend_data.get('total_battles', 0) + 1
-                if winner == 2:
-                    opp_legend_data['total_wins'] = opp_legend_data.get('total_wins', 0) + 1
+            # Update legends for opponent (if targeted)
+            if target:
+                opp_legends_ref = db.collection('legends').document(opponent)
+                opp_legends_doc = opp_legends_ref.get()
+                
+                if opp_legends_doc.exists:
+                    opp_legend_data = opp_legends_doc.to_dict()
+                    opp_legend_data['total_battles'] = opp_legend_data.get('total_battles', 0) + 1
+                    if winner == 2:
+                        opp_legend_data['total_wins'] = opp_legend_data.get('total_wins', 0) + 1
+                    else:
+                        opp_legend_data['total_losses'] = opp_legend_data.get('total_losses', 0) + 1
                 else:
-                    opp_legend_data['total_losses'] = opp_legend_data.get('total_losses', 0) + 1
-            else:
-                opp_legend_data = {
-                    'total_battles': 1,
-                    'total_wins': 1 if winner == 2 else 0,
-                    'total_losses': 1 if winner == 1 else 0
-                }
-            
-            opp_legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
-            opp_legends_ref.set(opp_legend_data)
+                    opp_legend_data = {
+                        'total_battles': 1,
+                        'total_wins': 1 if winner == 2 else 0,
+                        'total_losses': 1 if winner == 1 else 0
+                    }
+                
+                opp_legend_data['last_battle'] = firestore.SERVER_TIMESTAMP
+                opp_legends_ref.set(opp_legend_data)
             
             # Format response
-            battles_left = 2 - battle_data['battles']
+            if winner == 1:
+                emoji = "🏆"
+                result = f"won {user_score}-{opp_score}"
+            else:
+                emoji = "💔"
+                result = f"lost {user_score}-{opp_score}"
+            
+            battles_left = 1 - battles_used
             battle_text = " | ".join(battle_results)
-            response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battles left)"
+            response = f"⚔️ BATTLE: {battle_text} | {emoji} {user} {result} to {opponent}! ({battles_left} battle{'s' if battles_left != 1 else ''} left)"
             
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
